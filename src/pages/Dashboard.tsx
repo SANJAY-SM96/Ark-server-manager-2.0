@@ -1,18 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Server as ServerIcon, Activity, Cpu, HardDrive, Clock, Zap, Shield, Terminal, Globe, Copy, Check } from 'lucide-react';
+import { Server as ServerIcon, Activity, Cpu, HardDrive, Clock, Zap, Shield, Terminal, Globe, Copy, Check, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
 import { useUIStore } from '../stores/uiStore';
 import { cn, formatBytes } from '../utils/helpers';
 import { getAllServers, getSystemInfo } from '../utils/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import PerformanceMonitor from '../components/performance/PerformanceMonitor';
 import InstallServerDialog from '../components/server/InstallServerDialog';
+import { DependencyStatus } from '../components/DependencyStatus';
+
+interface Dependencies {
+  steamcmd_installed: boolean;
+  vcredist_installed: boolean;
+  dotnet_installed: boolean;
+}
 
 export default function Dashboard() {
   const { servers, setServers, updateServerStatus } = useServerStore();
   const { systemInfo, setSystemInfo } = useUIStore();
   const [performanceHistory, setPerformanceHistory] = useState<any[]>([]);
   const [showInstallDialog, setShowInstallDialog] = useState(false);
+  const [dependencies, setDependencies] = useState<Dependencies | null>(null);
+  const [checkingDeps, setCheckingDeps] = useState(true);
 
   const [publicIp, setPublicIp] = useState<string>('Loading...');
   const [isCopied, setIsCopied] = useState(false);
@@ -31,6 +41,19 @@ export default function Dashboard() {
   useEffect(() => {
     // Initial fetch
     getAllServers().then(setServers).catch(console.error);
+
+    // Check dependencies
+    const checkDeps = async () => {
+      try {
+        const deps = await invoke<Dependencies>('check_all_dependencies');
+        setDependencies(deps);
+      } catch (error) {
+        console.error('Failed to check dependencies:', error);
+      } finally {
+        setCheckingDeps(false);
+      }
+    };
+    checkDeps();
 
     // Fetch Public IP
     fetch('https://api.ipify.org?format=json')
@@ -355,6 +378,36 @@ export default function Dashboard() {
             <p className="text-sm text-slate-400">Access real-time server logs and event history</p>
           </div>
         </button>
+      </div>
+
+      {/* System Dependencies */}
+      <div className="glass-panel rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <Package className="w-5 h-5 text-sky-400" />
+          <h2 className="text-xl font-bold text-white">System Dependencies</h2>
+        </div>
+        {checkingDeps ? (
+          <div className="text-center py-8">
+            <p className="text-slate-400 text-sm">Checking dependencies...</p>
+          </div>
+        ) : dependencies ? (
+          <div className="space-y-3">
+            <DependencyStatus 
+              name="SteamCMD"
+              installed={dependencies.steamcmd_installed}
+              checking={checkingDeps}
+            />
+            <DependencyStatus 
+              name="Visual C++ Redistributables"
+              installed={dependencies.vcredist_installed}
+              checking={checkingDeps}
+            />
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-red-400 text-sm">Failed to check dependencies</p>
+          </div>
+        )}
       </div>
 
       {/* Performance Monitor */}

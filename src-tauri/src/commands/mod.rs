@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod cluster;
 pub mod config;
+pub mod dependencies;
 pub mod files;
 pub mod map;
 pub mod mods;

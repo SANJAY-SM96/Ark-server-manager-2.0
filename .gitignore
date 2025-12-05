@@ -22,3 +22,21 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Tauri / Rust
+src-tauri/target
+src-tauri/gen
+
+# VC++ Redistributable (large binary)
+src-tauri/resources/*.exe
+
+# Build artifacts
+*.msi
+*.deb
+*.AppImage
+*.dmg
+
+# Database files
+*.db
+*.db-shm
+*.db-wal

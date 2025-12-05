@@ -138,6 +138,11 @@ pub fn run() {
             commands::files::delete_file_path,
             commands::files::zip_directory,
             commands::files::unzip_file,
+            // Dependency commands
+            commands::dependencies::check_steamcmd_installed,
+            commands::dependencies::install_steamcmd,
+            commands::dependencies::get_steamcmd_path,
+            commands::dependencies::check_all_dependencies,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

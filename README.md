@@ -44,13 +44,22 @@ A modern, high-performance server management tool for **ARK: Survival Evolved (A
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18+)
 - [Rust](https://rustup.rs/) (Stable)
-- MSVC C++ Build Tools (Windows)
+- MSVC C++ Build Tools (Windows) - Only for development
 
-### Setup
+### End Users (Automatic Setup)
+**Download** the latest installer from [Releases](https://github.com/SANJAY-SM96/Ark-server-manager-2.0/releases)
+
+✅ **Zero Manual Configuration Required!**
+- Visual C++ Redistributables install automatically during setup
+- SteamCMD downloads automatically on first launch
+- Windows Firewall rules configured automatically
+- Ready to use in minutes!
+
+### Developers (Manual Setup)
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/ark-server-manager.git
-cd ark-server-manager
+git clone https://github.com/SANJAY-SM96/Ark-server-manager-2.0.git
+cd Ark-server-manager-2.0
 
 # 2. Install frontend dependencies
 npm install
@@ -64,6 +73,14 @@ npm run tauri dev
 npm run tauri build
 ```
 The executable will be located in `src-tauri/target/release/bundle/nsis/`.
+
+## 🔒 Data Privacy & Isolation
+
+- **100% Local**: All data stored on your computer only
+- **No Cloud Sync**: No remote servers or data collection
+- **Per-User Isolation**: Each Windows user gets their own separate installation
+- **No Telemetry**: Zero tracking or analytics
+- **Offline Capable**: Works completely offline after initial setup
 
 ## 📁 Project Structure
 - `src/`: React frontend code (Pages, Components, Stores).
