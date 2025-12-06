@@ -4,7 +4,18 @@ A modern, high-performance server management tool for **ARK: Survival Evolved (A
 
 ![ARK Server Manager](https://img.shields.io/badge/Status-Beta-blue) ![Rust](https://img.shields.io/badge/Backend-Rust-orange) ![React](https://img.shields.io/badge/Frontend-React-blue)
 
-![App Screenshot](docs/images/app-preview.png)
+![Dashboard](docs/images/dashboard.png)
+
+## 📸 Gallery
+
+<p align="center">
+  <img src="docs/images/server_manager.png" width="45%" alt="Server Manager">
+  <img src="docs/images/mod_manager.png" width="45%" alt="Mod Manager">
+</p>
+<p align="center">
+  <img src="docs/images/config_editor.png" width="45%" alt="Config Editor">
+  <img src="docs/images/rcon_manager.png" width="45%" alt="RCON Manager">
+</p>
 
 ## 🚀 Key Features
 
