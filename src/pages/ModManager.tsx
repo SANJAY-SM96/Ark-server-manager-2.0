@@ -27,6 +27,13 @@ export default function ModManager() {
     const [isInstalling, setIsInstalling] = useState(false);
 
     // Auto-load popular mods or search
+    // Auto-select first server
+    useEffect(() => {
+        if (servers.length > 0 && !selectedServerId) {
+            setSelectedServerId(servers[0].id);
+        }
+    }, [servers, selectedServerId]);
+
     // Search mods when query changes
     useEffect(() => {
         const fetchMods = async () => {

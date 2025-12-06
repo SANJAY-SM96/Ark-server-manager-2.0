@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Server as ServerIcon, Activity, Cpu, HardDrive, Clock, Zap, Shield, Terminal, Globe, Copy, Check, Package } from 'lucide-react';
+import { Server as ServerIcon, Activity, Cpu, HardDrive, Clock, Zap, Shield, Terminal, Globe, Copy, Check, Package, Rocket } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
 import { useUIStore } from '../stores/uiStore';
@@ -162,9 +162,7 @@ export default function Dashboard() {
 
     // Separate interval for player counts (lighter frequency, e.g. 5s)
     const playerInterval = setInterval(() => {
-      fetchPlayerCounts(servers); // Note: servers is stale here due to closure!
-      // We need to use functional update or ref.
-      // Actually, we can just fetch all servers inside the interval to get fresh list.
+      fetchPlayerCounts(servers);
       getAllServers().then(fetchPlayerCounts);
     }, 5000);
 
@@ -173,13 +171,67 @@ export default function Dashboard() {
       clearInterval(interval);
       clearInterval(playerInterval);
     };
-  }, []); // Removed deps to avoid re-running setup. We handle updates inside.
+  }, []);
+
+  const [appUpdate, setAppUpdate] = useState<any>(null); // Type should be AppUpdateInfo but using any for speed
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+
+  useEffect(() => {
+    // Check for App Updates
+    import('../utils/tauri').then(({ checkAppUpdate }) => {
+      checkAppUpdate().then(info => {
+        if (info) {
+          setAppUpdate(info);
+          toast('New App Update Available!', { icon: '🚀' });
+        }
+      }).catch(console.error);
+    });
+  }, []);
+
+  const handleInstallAppUpdate = async () => {
+    if (!appUpdate) return;
+    try {
+      setInstallingUpdate(true);
+      toast.loading('Downloading and installing update...', { id: 'app-update' });
+      const { installAppUpdate } = await import('../utils/tauri');
+      await installAppUpdate(appUpdate.download_url);
+      // App will exit
+    } catch (error) {
+      console.error(error);
+      toast.error(`Update failed: ${error}`, { id: 'app-update' });
+      setInstallingUpdate(false);
+    }
+  };
+
+
 
   const runningServers = servers.filter(s => s.status === 'running').length;
   const totalServers = servers.length;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {/* App Update Banner */}
+      {appUpdate && (
+        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between shadow-lg shadow-violet-500/20">
+          <div className="flex items-center gap-4">
+            <div className="p-2 bg-white/20 rounded-lg">
+              <Rocket className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-lg">Update v{appUpdate.version} Available</h3>
+              <p className="text-violet-200 text-sm">A new version of Ark Server Manager is ready.</p>
+            </div>
+          </div>
+          <button
+            onClick={handleInstallAppUpdate}
+            disabled={installingUpdate}
+            className="px-6 py-2 bg-white text-violet-600 font-bold rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
+          >
+            {installingUpdate ? 'Installing...' : 'Update Now'}
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

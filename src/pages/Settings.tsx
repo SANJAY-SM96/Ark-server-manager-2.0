@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Key, Lock, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Save, Key, Lock, CheckCircle, AlertCircle, ExternalLink, Github } from 'lucide-react';
 import { getSetting, setSetting } from '../utils/tauri';
 import toast from 'react-hot-toast';
 import { invoke } from '@tauri-apps/api/core';
@@ -7,6 +7,7 @@ import { invoke } from '@tauri-apps/api/core';
 export default function Settings() {
     const [curseforgeApiKey, setCurseforgeApiKey] = useState('');
     const [steamApiKey, setSteamApiKey] = useState('');
+    const [githubRepo, setGithubRepo] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [showCurseforgeKey, setShowCurseforgeKey] = useState(false);
@@ -28,14 +29,16 @@ export default function Settings() {
 
     const loadSettings = async () => {
         try {
-            const [curseforgeKey, steamKey, discordWebhookUrl] = await Promise.all([
+            const [curseforgeKey, steamKey, discordWebhookUrl, repo] = await Promise.all([
                 getSetting('curseforge_api_key'),
                 getSetting('steam_api_key'),
-                getSetting('discord_webhook_url')
+                getSetting('discord_webhook_url'),
+                getSetting('github_repo')
             ]);
             if (curseforgeKey) setCurseforgeApiKey(curseforgeKey);
             if (steamKey) setSteamApiKey(steamKey);
             if (discordWebhookUrl) setDiscordWebhook(discordWebhookUrl);
+            if (repo) setGithubRepo(repo);
         } catch (error) {
             console.error('Failed to load settings:', error);
             toast.error('Failed to load settings');
@@ -49,9 +52,9 @@ export default function Settings() {
         try {
             await Promise.all([
                 setSetting('curseforge_api_key', curseforgeApiKey),
-                setSetting('curseforge_api_key', curseforgeApiKey),
                 setSetting('steam_api_key', steamApiKey),
-                setSetting('discord_webhook_url', discordWebhook)
+                setSetting('discord_webhook_url', discordWebhook),
+                setSetting('github_repo', githubRepo)
             ]);
             toast.success('Settings saved successfully!');
         } catch (error) {
@@ -87,6 +90,36 @@ export default function Settings() {
                 </div>
             ) : (
                 <div className="space-y-6">
+                    {/* GitHub Repository */}
+                    <div className="glass-panel rounded-2xl p-8">
+                        <div className="flex items-start space-x-4 mb-6">
+                            <div className="p-3 bg-slate-700/50 rounded-xl border border-slate-600/50">
+                                <Github className="w-6 h-6 text-white" />
+                            </div>
+                            <div className="flex-1">
+                                <h2 className="text-2xl font-bold text-white mb-2">GitHub Repository</h2>
+                                <p className="text-slate-400">
+                                    Configure the repository for application auto-updates.
+                                </p>
+                            </div>
+                        </div>
+                        <div>
+                             <label className="block text-sm font-medium text-slate-300 mb-3">
+                                Repository (owner/name)
+                             </label>
+                             <input
+                                type="text"
+                                value={githubRepo}
+                                onChange={(e) => setGithubRepo(e.target.value)}
+                                placeholder="e.g. yourname/ark-server-manager"
+                                className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all font-mono"
+                            />
+                            <p className="text-xs text-slate-500 mt-2">
+                                New releases will be checked against this repository.
+                            </p>
+                        </div>
+                    </div>
+
                     {/* Steam Web API Key */}
                     <div className="glass-panel rounded-2xl p-8">
                         <div className="flex items-start space-x-4 mb-6">

@@ -319,6 +319,45 @@ export async function zipDirectory(source: string, destination: string): Promise
     return await invoke('zip_directory', { source, destination });
 }
 
-export async function unzipFile(zipPath: string, destination: string): Promise<void> {
-    return await invoke('unzip_file', { zipPath, destination });
+export async function unzipFile(source: string, destination: string): Promise<void> {
+    return await invoke('unzip_file', { source, destination });
 }
+
+export async function setAutoRestart(serverId: number, enabled: boolean): Promise<void> {
+    return await invoke('set_auto_restart', { serverId, enabled });
+}
+
+export async function setAutoUpdate(serverId: number, enabled: boolean): Promise<void> {
+    return await invoke('set_auto_update', { serverId, enabled });
+}
+
+export async function updateServerGraceful(serverId: number): Promise<void> {
+    return await invoke('update_server_graceful', { serverId });
+}
+
+// ============================================================================
+// App Update Commands
+// ============================================================================
+
+export interface AppUpdateInfo {
+    version: string;
+    download_url: string;
+    release_notes: string;
+}
+
+export async function checkAppUpdate(): Promise<AppUpdateInfo | null> {
+    return await invoke('check_app_update');
+}
+
+export async function installAppUpdate(downloadUrl: string): Promise<void> {
+    return await invoke('install_app_update', { downloadUrl });
+}
+
+export async function getAppVersion(): Promise<string> {
+    return await invoke('get_app_version');
+}
+
+export async function setGitHubRepo(repo: string): Promise<void> {
+    return await invoke('set_github_repo', { repo });
+}
+

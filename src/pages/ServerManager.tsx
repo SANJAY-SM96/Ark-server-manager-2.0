@@ -3,7 +3,7 @@ import { Plus, Play, Square, RotateCw, Trash2, Download, Settings, Terminal, Glo
 import { useServerStore } from '../stores/serverStore';
 import { cn } from '../utils/helpers';
 import InstallServerDialog from '../components/server/InstallServerDialog';
-import { startServer, stopServer, restartServer, deleteServer, getAllServers, updateServer } from '../utils/tauri';
+import { startServer, stopServer, restartServer, deleteServer, getAllServers, updateServerGraceful, setAutoRestart } from '../utils/tauri';
 import toast from 'react-hot-toast';
 
 import { useNavigate } from 'react-router-dom';
@@ -74,12 +74,36 @@ export default function ServerManager() {
 
     const handleUpdateServer = async (serverId: number) => {
         try {
+            // Optimistic update
             updateServerStatus(serverId, 'updating');
-            await updateServer(serverId);
-            toast.success('Server update initiated');
+            toast.loading('Starting Graceful Update (Notify -> Save -> Update)...', { duration: 5000 });
+
+            await updateServerGraceful(serverId);
+
+            toast.success('Update process initiated!');
         } catch (error) {
-            updateServerStatus(serverId, 'stopped');
+            updateServerStatus(serverId, 'stopped'); // or revert to previous
             toast.error(`Failed to update server: ${error}`);
+        }
+    };
+
+    const handleToggleAutoRestart = async (serverId: number, enabled: boolean) => {
+        try {
+            // Optimistic update
+            const updated = servers.map(s => {
+                if (s.id === serverId) {
+                    return { ...s, config: { ...s.config, autoRestart: enabled } };
+                }
+                return s;
+            });
+            setServers(updated);
+
+            await setAutoRestart(serverId, enabled);
+            toast.success(`Auto-Restart ${enabled ? 'Enabled' : 'Disabled'}`);
+        } catch (error) {
+            // Revert on failure involves refetching or complexity, keeping simple for mvp
+            toast.error(`Failed to toggle auto-restart: ${error}`);
+            getAllServers().then(setServers); // Revert by refetch
         }
     };
 
@@ -237,7 +261,7 @@ export default function ServerManager() {
                             </div>
 
                             {/* Server Details Footer */}
-                            <div className="mt-6 pt-4 border-t border-slate-700/30 grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+                            <div className="mt-6 pt-4 border-t border-slate-700/30 grid grid-cols-2 md:grid-cols-5 gap-6 text-sm">
                                 <div>
                                     <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold mb-1">Install Path</p>
                                     <p className="text-slate-300 font-mono text-xs truncate" title={server.installPath}>{server.installPath}</p>
@@ -255,6 +279,21 @@ export default function ServerManager() {
                                     <p className="text-slate-300 font-mono text-xs">
                                         {server.ports.gamePort} / {server.ports.queryPort}
                                     </p>
+                                </div>
+                                <div>
+                                    <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold mb-1">Process</p>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-slate-300 font-mono text-xs">PID: {server.pid || 'N/A'}</p>
+                                        <label className="flex items-center cursor-pointer ml-2" title="Toggle Auto-Restart on Crash">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only peer"
+                                                checked={server.config.autoRestart || false}
+                                                onChange={(e) => handleToggleAutoRestart(server.id, e.target.checked)}
+                                            />
+                                            <div className="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-500 relative"></div>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </div>

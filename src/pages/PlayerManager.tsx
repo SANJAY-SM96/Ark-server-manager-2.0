@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Users, Terminal, RefreshCw, Send, ShieldAlert, LogOut, Ban, Map as MapIcon, Skull, Lock, Clock, Globe, FileText, CloudDownload } from 'lucide-react';
 import { cn } from '../utils/helpers';
-import { getOnlinePlayers, sendRconCommand } from '../utils/tauri';
+import { getOnlinePlayers, sendRconCommand, readFileContent, saveFileContent } from '../utils/tauri';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
 
@@ -25,8 +25,14 @@ export default function PlayerManager() {
     // Console
     const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
     const [commandInput, setCommandInput] = useState('');
+
     const [isExecuting, setIsExecuting] = useState(false);
     const consoleEndRef = useRef<HTMLDivElement>(null);
+
+    // Ban Manager State
+    const [showBanManager, setShowBanManager] = useState(false);
+    const [bannedPlayers, setBannedPlayers] = useState<string[]>([]);
+    const [isLoadingBans, setIsLoadingBans] = useState(false);
 
     // Auto-scroll console
     useEffect(() => {
@@ -95,6 +101,8 @@ export default function PlayerManager() {
         }
     };
 
+
+
     const handleBan = async (steamId: string) => {
         if (!selectedServerId) return;
         if (!confirm(`Ban player ${steamId}?`)) return;
@@ -104,10 +112,64 @@ export default function PlayerManager() {
             const res = await sendRconCommand(selectedServerId, `BanPlayer ${steamId}`);
             toast.success(`Ban command sent: ${res}`);
             setTimeout(fetchPlayers, 2000);
+            if (showBanManager) fetchBans(); // Refresh if open
         } catch (e) {
             toast.error(`Failed to ban: ${e}`);
         }
     };
+
+    const fetchBans = async () => {
+        if (!selectedServerId) return;
+        const server = servers.find(s => s.id === selectedServerId);
+        if (!server) return;
+
+        setIsLoadingBans(true);
+        try {
+            // Helper to handle both slashes
+            const path = `${server.installPath}/ShooterGame/Saved/BanList.txt`.replace(/\\/g, '/');
+            const content = await readFileContent(path);
+            const ids = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+            setBannedPlayers(ids);
+        } catch (error) {
+            console.error('Failed to read ban list:', error);
+            // Don't toast error on common 'file not found' for new servers
+            setBannedPlayers([]);
+        } finally {
+            setIsLoadingBans(false);
+        }
+    };
+
+    const handleUnban = async (steamId: string) => {
+        if (!selectedServerId) return;
+        const server = servers.find(s => s.id === selectedServerId);
+        if (!server) return;
+
+        if (!confirm(`Unban player ${steamId}?`)) return;
+
+        try {
+            const path = `${server.installPath}/ShooterGame/Saved/BanList.txt`.replace(/\\/g, '/');
+            const newContent = bannedPlayers.filter(id => id !== steamId).join('\n');
+            await saveFileContent(path, newContent);
+
+            // Also try RCON Unban if available/needed or just reload bans
+            try {
+                // Some servers support UnbanPlayer
+                await sendRconCommand(selectedServerId, `UnbanPlayer ${steamId}`);
+            } catch {
+                // Ignore if unban command fail, file edit is primary
+            }
+
+            toast.success('Player unbanned (removed from BanList.txt)');
+            fetchBans();
+        } catch (error) {
+            toast.error(`Failed to unban: ${error}`);
+        }
+    };
+
+    // Auto-load bans when modal opens
+    useEffect(() => {
+        if (showBanManager) fetchBans();
+    }, [showBanManager]);
 
     const tabs = [
         { id: 'players', name: 'Players & Console', icon: Users },
@@ -188,6 +250,13 @@ export default function PlayerManager() {
                                         className="p-2 hover:bg-slate-700/50 rounded-lg text-slate-400 hover:text-white transition-colors"
                                     >
                                         <RefreshCw className={cn("w-5 h-5", isLoading && "animate-spin")} />
+                                    </button>
+                                    <button
+                                        onClick={() => setShowBanManager(true)}
+                                        className="ml-2 px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500 hover:text-white transition-colors text-xs font-bold flex items-center"
+                                    >
+                                        <Ban className="w-3 h-3 mr-1" />
+                                        MANAGE BANS
                                     </button>
                                 </div>
 
@@ -294,6 +363,71 @@ export default function PlayerManager() {
                     {activeTab === 'automation' && <div className="h-full overflow-y-auto pr-2"><Automation serverId={selectedServerId} /></div>}
                     {activeTab === 'network' && <div className="h-full overflow-y-auto pr-2"><NetworkManager serverId={selectedServerId} /></div>}
                     {activeTab === 'updates' && <div className="h-full overflow-y-auto pr-2"><UpdateManager serverId={selectedServerId} /></div>}
+                </div>
+            )}
+            {/* Ban Manager Modal */}
+            {showBanManager && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center">
+                            <Ban className="w-5 h-5 mr-2 text-red-400" />
+                            Manage Banned Players
+                        </h3>
+
+                        {isLoadingBans ? (
+                            <div className="py-8 text-center text-slate-400">Loading ban list...</div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2">
+                                    {bannedPlayers.length === 0 ? (
+                                        <p className="text-slate-500 text-center py-4">No banned players found in BanList.txt</p>
+                                    ) : (
+                                        bannedPlayers.map((id, i) => (
+                                            <div key={i} className="flex items-center justify-between bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+                                                <span className="text-slate-300 font-mono text-sm">{id}</span>
+                                                <button
+                                                    onClick={() => handleUnban(id)}
+                                                    className="text-red-400 hover:text-red-300 hover:bg-red-900/20 p-2 rounded transition-colors text-xs font-bold"
+                                                >
+                                                    UNBAN
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                <div className="pt-4 border-t border-slate-700/50">
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Steam ID to ban..."
+                                            className="bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white flex-1 text-sm font-mono focus:outline-none focus:border-sky-500"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    const val = (e.target as HTMLInputElement).value;
+                                                    if (val) handleBan(val);
+                                                    (e.target as HTMLInputElement).value = '';
+                                                }
+                                            }}
+                                        />
+                                        <button className="bg-red-500/10 text-red-500 border border-red-500/20 px-4 py-2 rounded hover:bg-red-500 hover:text-white transition-colors text-sm font-bold">
+                                            BAN
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        Modifying: ShooterGame/Saved/BanList.txt
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => setShowBanManager(false)}
+                            className="absolute top-4 right-4 text-slate-500 hover:text-white"
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

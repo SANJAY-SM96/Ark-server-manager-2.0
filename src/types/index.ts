@@ -14,6 +14,7 @@ export interface Server {
     ports: ServerPorts;
     createdAt: string;
     lastStarted?: string;
+    pid?: number;
 }
 
 export interface ServerPorts {
@@ -32,6 +33,8 @@ export interface ServerConfig {
     battleyeEnabled?: boolean;
     multihomeIp?: string;
     crossplayEnabled?: boolean;
+    autoRestart?: boolean;
+    autoUpdate?: boolean;
 }
 
 export interface SystemInfo {

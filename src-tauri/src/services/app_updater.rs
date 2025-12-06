@@ -36,13 +36,9 @@ impl AppUpdateService {
         };
 
         let repo = match repo_opt {
-            Some(r) => r,
-            None => return Err("GitHub repository not configured. Please set 'github_repo' setting.".to_string()),
+            Some(r) if !r.trim().is_empty() => r,
+            _ => "SANJAY-SM96/Ark-server-manager-2.0".to_string(), // Default repo
         };
-
-        if repo.trim().is_empty() {
-             return Err("GitHub repository is empty.".to_string());
-        }
 
         // 2. Fetch Latest Release
         let client = reqwest::Client::new();
