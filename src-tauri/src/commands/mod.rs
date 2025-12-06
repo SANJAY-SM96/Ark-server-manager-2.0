@@ -1,7 +1,9 @@
+pub mod app_updater;
 pub mod backup;
 pub mod cluster;
 pub mod config;
 pub mod dependencies;
+pub mod discord;
 pub mod files;
 pub mod map;
 pub mod mods;
@@ -12,4 +14,3 @@ pub mod security;
 pub mod server;
 pub mod system;
 pub mod tribe;
-pub mod app_updater;

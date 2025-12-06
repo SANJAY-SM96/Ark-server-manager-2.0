@@ -56,27 +56,26 @@ impl AppUpdateService {
 
         let release: GitHubRelease = resp.json().await.map_err(|e| format!("Failed to parse release info: {}", e))?;
 
-        // 3. Compare Versions
-        // We assume semantic versioning, potentially with 'v' prefix
-        let current_version = env!("CARGO_PKG_VERSION");
-        let remote_version_tag = release.tag_name.trim_start_matches('v');
-        
-        // Simple string comparison for MVP, ideally semver parsing
-        if remote_version_tag == current_version {
-            return Ok(None); // Remote matches current, or is older (ignoring specific logic for now)
+        // 3. Compare Versions using SemVer
+        let current_version_str = env!("CARGO_PKG_VERSION");
+        let remote_version_str = release.tag_name.trim_start_matches('v');
+
+        let current_version = semver::Version::parse(current_version_str)
+            .map_err(|e| format!("Failed to parse current version {}: {}", current_version_str, e))?;
+        let remote_version = semver::Version::parse(remote_version_str)
+            .map_err(|e| format!("Failed to parse remote version {}: {}", remote_version_str, e))?;
+
+        if remote_version <= current_version {
+            return Ok(None); // Remote is same or older
         }
-        
-        // This is a naive check (simply different means update?). 
-        // Better: compare semver. But for now, if tag != current, assume update available.
-        // Actually, let's just return it if it's different.
-        
+
         // Find .exe asset
         let asset = release.assets.iter()
             .find(|a| a.name.ends_with(".exe") || a.name.ends_with(".msi"))
             .ok_or("No executable asset found in release.".to_string())?;
 
         Ok(Some(AppUpdateInfo {
-            version: remote_version_tag.to_string(),
+            version: remote_version_str.to_string(),
             download_url: asset.browser_download_url.clone(),
             release_notes: release.body,
         }))
@@ -93,10 +92,16 @@ impl AppUpdateService {
         
         fs::write(&dest_path, content).map_err(|e| format!("Failed to save update file: {}", e))?;
 
-        // 2. Run Installer
-        // We run it and detach, then close ourself
-        let _ = std::process::Command::new(&dest_path)
-            .arg("/SILENT") // Assuming common installer flags
+        // 2. Run Installer with Elevation (RunAs)
+        // We use PowerShell to trigger the UAC prompt since direct Command::new fails with error 740
+        let installer_path = dest_path.to_string_lossy();
+        let _ = std::process::Command::new("powershell")
+            .args(&[
+                "Start-Process",
+                "-FilePath", &format!("'{}'", installer_path),
+                "-ArgumentList", "'/SILENT'",
+                "-Verb", "RunAs"
+            ])
             .spawn()
             .map_err(|e| format!("Failed to launch installer: {}", e))?;
 

@@ -72,7 +72,7 @@ impl SchedulerService {
                         
                         match task_type.as_str() {
                             "restart" => {
-                                let _ = server::restart_server(state.clone(), server_id).await;
+                                let _ = server::restart_server(app_handle.clone(), state.clone(), server_id).await;
                             },
                             "backup" => {
                                 let _ = backup::create_backup(state.clone(), server_id, "auto".to_string(), None).await;

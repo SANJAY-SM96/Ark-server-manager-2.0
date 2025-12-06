@@ -5,6 +5,7 @@ import { createCluster, getClusters, deleteCluster } from '../utils/tauri';
 import { Cluster } from '../types';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
+import { useUIStore } from '../stores/uiStore';
 
 export default function ClusterManager() {
     const [clusters, setClusters] = useState<Cluster[]>([]);
@@ -13,6 +14,19 @@ export default function ClusterManager() {
     const [newClusterName, setNewClusterName] = useState('');
     const [selectedServers, setSelectedServers] = useState<number[]>([]);
     const { servers } = useServerStore();
+    const { gameMode } = useUIStore();
+
+    const filteredServers = servers.filter(s => s.serverType === gameMode);
+
+    // Filter clusters to only show ones relevant to current gameMode
+    // A cluster is relevant if ALL its servers match the current gameMode
+    const filteredClusters = clusters.filter(c => {
+        if (c.serverIds.length === 0) return false;
+        // Check if the first server in the cluster matches the current game mode
+        // Note: This assumes clusters don't contain mixed types (which they shouldn't)
+        const firstServer = servers.find(s => s.id === c.serverIds[0]);
+        return firstServer?.serverType === gameMode;
+    });
 
     const fetchClusters = async () => {
         setIsLoading(true);
@@ -115,7 +129,7 @@ export default function ClusterManager() {
                         <div>
                             <label className="text-sm font-medium text-slate-300 block mb-2">Select Servers to Link</label>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {servers.map(server => (
+                                {filteredServers.map(server => (
                                     <div
                                         key={server.id}
                                         onClick={() => toggleServerSelection(server.id)}
@@ -169,7 +183,7 @@ export default function ClusterManager() {
                         <p className="text-slate-500 mt-2">Create a cluster to enable cross-server travel</p>
                     </div>
                 ) : (
-                    clusters.map(cluster => (
+                    filteredClusters.map(cluster => (
                         <div key={cluster.id} className="glass-panel rounded-2xl p-6 relative group">
                             <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button

@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Server as ServerIcon, Activity, Cpu, HardDrive, Clock, Zap, Shield, Terminal, Globe, Copy, Check, Package, Rocket } from 'lucide-react';
+import { Server as ServerIcon, Activity, Cpu, HardDrive, Clock, Zap, Shield, Terminal, Globe, Copy, Check, Package, Rocket, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
 import { useUIStore } from '../stores/uiStore';
 import { cn, formatBytes } from '../utils/helpers';
-import { getAllServers, getSystemInfo } from '../utils/tauri';
+import { getAllServers, getSystemInfo, deleteServer } from '../utils/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import PerformanceMonitor from '../components/performance/PerformanceMonitor';
 import InstallServerDialog from '../components/server/InstallServerDialog';
 import { DependencyStatus } from '../components/DependencyStatus';
+import { useNavigate } from 'react-router-dom';
 
 interface Dependencies {
   steamcmd_installed: boolean;
@@ -17,12 +18,27 @@ interface Dependencies {
 }
 
 export default function Dashboard() {
-  const { servers, setServers, updateServerStatus } = useServerStore();
+  const navigate = useNavigate();
+  const { servers, setServers, updateServerStatus, removeServer } = useServerStore();
   const { systemInfo, setSystemInfo } = useUIStore();
   const [performanceHistory, setPerformanceHistory] = useState<any[]>([]);
   const [showInstallDialog, setShowInstallDialog] = useState(false);
   const [dependencies, setDependencies] = useState<Dependencies | null>(null);
   const [checkingDeps, setCheckingDeps] = useState(true);
+
+  // Handle delete server from dashboard
+  const handleDeleteServer = async (serverId: number, serverName: string) => {
+    if (!confirm(`Delete "${serverName}"? This removes the database entry (files on disk are not affected).`)) {
+      return;
+    }
+    try {
+      await deleteServer(serverId);
+      removeServer(serverId);
+      toast.success('Server removed from list');
+    } catch (error) {
+      toast.error(`Failed to delete: ${error}`);
+    }
+  };
 
   const [publicIp, setPublicIp] = useState<string>('Loading...');
   const [isCopied, setIsCopied] = useState(false);
@@ -233,15 +249,27 @@ export default function Dashboard() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-violet-400">
+      <div className="flex items-center justify-between relative">
+        {/* Ambient Orbs */}
+        <div className="ambient-orb w-64 h-64 bg-sky-500/20 -top-32 -left-32" />
+        <div className="ambient-orb w-48 h-48 bg-violet-500/20 -top-24 right-1/4" style={{ animationDelay: '2s' }} />
+
+        <div className="relative z-10">
+          <p className="text-slate-400 text-sm mb-1">
+            {(() => {
+              const hour = new Date().getHours();
+              if (hour < 12) return '☀️ Good morning, Commander';
+              if (hour < 18) return '🌤️ Good afternoon, Commander';
+              return '🌙 Good evening, Commander';
+            })()}
+          </p>
+          <h1 className="text-4xl font-bold gradient-text">
             Dashboard
           </h1>
           <p className="text-slate-400 mt-2 text-lg">Monitor your ARK empire in real-time</p>
         </div>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2 px-4 py-2 rounded-full glass-panel border border-slate-700/50">
+        <div className="flex items-center space-x-4 relative z-10">
+          <div className="flex items-center space-x-2 px-4 py-2 rounded-full glass-panel border border-slate-700/50 hover-lift">
             <Globe className="w-4 h-4 text-sky-400" />
             <span className="text-sm font-mono text-slate-300">IP: <span className="text-white">{publicIp}</span></span>
             <button
@@ -253,7 +281,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="flex items-center space-x-2 px-4 py-2 rounded-full glass-panel">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <div className="w-2 h-2 rounded-full bg-green-500 status-running"></div>
             <span className="text-xs font-medium text-green-400">System Online</span>
           </div>
         </div>
@@ -262,7 +290,7 @@ export default function Dashboard() {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Servers */}
-        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group">
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover-lift fade-slide-in stagger-1" style={{ opacity: 0 }}>
           <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/10 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-sky-500/20"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-4">
@@ -279,7 +307,7 @@ export default function Dashboard() {
         </div>
 
         {/* Running Servers */}
-        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group">
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover-lift fade-slide-in stagger-2" style={{ opacity: 0 }}>
           <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-green-500/20"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-4">
@@ -296,7 +324,7 @@ export default function Dashboard() {
         </div>
 
         {/* CPU Usage */}
-        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group">
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover-lift fade-slide-in stagger-3" style={{ opacity: 0 }}>
           <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/10 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-violet-500/20"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-4">
@@ -318,7 +346,7 @@ export default function Dashboard() {
         </div>
 
         {/* RAM Usage */}
-        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group">
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover-lift fade-slide-in stagger-4" style={{ opacity: 0 }}>
           <div className="absolute top-0 right-0 w-32 h-32 bg-pink-500/10 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-pink-500/20"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-4">
@@ -346,7 +374,10 @@ export default function Dashboard() {
             <Terminal className="w-5 h-5 text-sky-400" />
             Server Status
           </h2>
-          <button className="text-sm text-sky-400 hover:text-sky-300 transition-colors">
+          <button
+            onClick={() => navigate('/servers')}
+            className="text-sm text-sky-400 hover:text-sky-300 transition-colors"
+          >
             View All
           </button>
         </div>
@@ -410,6 +441,17 @@ export default function Dashboard() {
                   )}>
                     {server.status.charAt(0).toUpperCase() + server.status.slice(1)}
                   </span>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteServer(server.id, server.name);
+                    }}
+                    className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                    title="Remove from list"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -419,7 +461,10 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <button className="p-6 glass-panel rounded-2xl hover:border-sky-500/50 transition-all text-left group relative overflow-hidden">
+        <button
+          onClick={() => setShowInstallDialog(true)}
+          className="p-6 glass-panel rounded-2xl hover:border-sky-500/50 transition-all text-left group relative overflow-hidden"
+        >
           <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative z-10">
             <div className="w-12 h-12 bg-sky-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -430,7 +475,10 @@ export default function Dashboard() {
           </div>
         </button>
 
-        <button className="p-6 glass-panel rounded-2xl hover:border-violet-500/50 transition-all text-left group relative overflow-hidden">
+        <button
+          onClick={() => navigate('/security')}
+          className="p-6 glass-panel rounded-2xl hover:border-violet-500/50 transition-all text-left group relative overflow-hidden"
+        >
           <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative z-10">
             <div className="w-12 h-12 bg-violet-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -441,7 +489,10 @@ export default function Dashboard() {
           </div>
         </button>
 
-        <button className="p-6 glass-panel rounded-2xl hover:border-pink-500/50 transition-all text-left group relative overflow-hidden">
+        <button
+          onClick={() => navigate('/logs')}
+          className="p-6 glass-panel rounded-2xl hover:border-pink-500/50 transition-all text-left group relative overflow-hidden"
+        >
           <div className="absolute inset-0 bg-gradient-to-br from-pink-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative z-10">
             <div className="w-12 h-12 bg-pink-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">

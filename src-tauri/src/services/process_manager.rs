@@ -1,8 +1,9 @@
-use anyhow::{Context, Result};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::process::{Child, Command};
+use tauri::{AppHandle, Emitter};
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::process::{Child, Command};
+use std::path::PathBuf;
+use anyhow::{Context, Result};
 
 pub struct ProcessManager {
     processes: Arc<Mutex<HashMap<i64, Child>>>,
@@ -18,6 +19,7 @@ impl ProcessManager {
     /// Start ARK server
     pub fn start_server(
         &self,
+        app_handle: &AppHandle, // ADDED
         server_id: i64,
         server_type: &str,
         install_path: &PathBuf,
@@ -126,13 +128,56 @@ impl ProcessManager {
         // ...
 
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let child = Command::new(&executable)
+        let mut child = Command::new(&executable)
             .args(&args)
             .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .context("Failed to start server process")?;
 
         let child_id = child.id();
+        
+        
+        // STREAM LOGS
+        {
+             // Capture stdout
+             if let Some(stdout) = child.stdout.take() {
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines() {
+                        if let Ok(l) = line {
+                            let _ = app_handle.emit("server-console-output", serde_json::json!({
+                                "serverId": server_id,
+                                "line": l,
+                                "type": "stdout"
+                            }));
+                        }
+                    }
+                });
+             }
+             
+             // Capture stderr
+             if let Some(stderr) = child.stderr.take() {
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stderr);
+                    for line in reader.lines() {
+                        if let Ok(l) = line {
+                             let _ = app_handle.emit("server-console-output", serde_json::json!({
+                                "serverId": server_id,
+                                "line": l,
+                                "type": "stderr"
+                            }));
+                        }
+                    }
+                });
+             }
+        }
+
         let mut processes = self.processes.lock().unwrap();
         processes.insert(server_id, child);
 
@@ -174,6 +219,7 @@ impl ProcessManager {
     /// Restart server
     pub fn restart_server(
         &self,
+        app_handle: &AppHandle, // ADDED
         server_id: i64,
         server_type: &str,
         install_path: &PathBuf,
@@ -199,6 +245,7 @@ impl ProcessManager {
 
         // Start again
         self.start_server(
+            app_handle, // PASS IT
             server_id,
             server_type,
             install_path,
@@ -245,6 +292,12 @@ impl ProcessManager {
         }
 
         dead_servers
+    }
+
+    /// Check if there are any running processes
+    pub fn has_running_processes(&self) -> bool {
+        let processes = self.processes.lock().unwrap();
+        !processes.is_empty()
     }
 }
 

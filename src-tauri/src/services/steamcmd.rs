@@ -141,7 +141,7 @@ impl SteamCmdService {
         Ok("Unknown".to_string())
     }
 
-    pub fn download_mods(&self, server_type: &str, install_path: &PathBuf, mod_ids: Vec<String>) -> Result<()> {
+    pub fn download_mods(&self, server_type: &str, install_path: &PathBuf, mod_ids: Vec<String>, force_validate: bool) -> Result<()> {
         let steamcmd_exe = self.get_steamcmd_exe()?;
         if !steamcmd_exe.exists() {
              return Err(anyhow::anyhow!("SteamCMD not found. Please install it first."));
@@ -172,6 +172,9 @@ impl SteamCmdService {
             args.push("+workshop_download_item");
             args.push(app_id);
             args.push(mod_id);
+            if force_validate {
+                 args.push("validate");
+            }
         }
 
         args.push("+quit");
@@ -242,7 +245,7 @@ impl SteamCmdService {
              for mod_id in mod_ids {
                  let source_dir = source_base.join(&mod_id);
                  let dest_dir = dest_base.join(&mod_id);
-                 let dest_mod_file = dest_base.join(format!("{}.mod", mod_id)); // ARK requires a .mod file too
+                 let _dest_mod_file = dest_base.join(format!("{}.mod", mod_id)); // ARK requires a .mod file too
 
                  // Windows SteamCMD often downloads the folder. 
                  // Note: Ideally we also need the .mod file. 

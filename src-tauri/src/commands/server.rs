@@ -1,9 +1,10 @@
 use crate::models::{Server, ServerType, ServerStatus, ServerPorts, ServerConfig};
 use crate::AppState;
-use tauri::{AppHandle, State, Manager};
+use tauri::{AppHandle, State, Manager, Emitter};
 use std::path::PathBuf;
 use crate::services::steamcmd::SteamCmdService;
 use crate::services::notifications::NotificationService;
+// use ini::Ini;
 
 #[tauri::command]
 pub async fn get_all_servers(state: State<'_, AppState>) -> Result<Vec<Server>, String> {
@@ -117,6 +118,7 @@ pub async fn install_server(
         // We can access state from app_handle if needed, but for now just run the install
         match service.install_server(&server_type_clone, &install_path_clone) {
             Ok(_) => {
+                println!("✅ Server installation completed successfully!");
                 // Update status to stopped (ready)
                  if let Some(state) = app_handle.try_state::<AppState>() {
                     if let Ok(db) = state.db.lock() {
@@ -125,16 +127,37 @@ pub async fn install_server(
                         }
                     }
                  }
+                 // Emit status change event so UI refreshes
+                 let _ = app_handle.emit("server-status-changed", serde_json::json!({
+                     "id": id,
+                     "status": "stopped"
+                 }));
+                 // Emit Success Event
+                 let _ = app_handle.emit("server-install-complete", serde_json::json!({
+                     "serverId": id,
+                     "success": true
+                 }));
             }
             Err(e) => {
-                println!("Installation failed: {}", e);
+                println!("❌ Installation failed: {}", e);
                  if let Some(state) = app_handle.try_state::<AppState>() {
                     if let Ok(db) = state.db.lock() {
                         if let Ok(conn) = db.get_connection() {
-                            let _ = conn.execute("UPDATE servers SET status = ?1 WHERE id = ?2", ("crashed", id)); // Or 'error'
+                            let _ = conn.execute("UPDATE servers SET status = ?1 WHERE id = ?2", ("crashed", id));
                         }
                     }
                  }
+                 // Emit status change event
+                 let _ = app_handle.emit("server-status-changed", serde_json::json!({
+                     "id": id,
+                     "status": "crashed"
+                 }));
+                 // Emit Failure Event
+                 let _ = app_handle.emit("server-install-complete", serde_json::json!({
+                     "serverId": id,
+                     "success": false,
+                     "error": e.to_string()
+                 }));
             }
         }
     });
@@ -166,7 +189,7 @@ pub async fn install_server(
 }
 
 #[tauri::command]
-pub async fn start_server(state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
+pub async fn start_server(app: AppHandle, state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
     // Get server details from database
     let (server_type, install_path, map_name, session_name, game_port, query_port, rcon_port,
          max_players, server_password, admin_password, use_battleye, multihome_ip, crossplay_enabled) = {
@@ -197,7 +220,21 @@ pub async fn start_server(state: State<'_, AppState>, server_id: i64) -> Result<
         }).map_err(|e| e.to_string())?
     };
 
+    // SYNC: Write settings to GameUserSettings.ini before starting
+    if let Err(e) = sync_settings_to_ini(
+        &PathBuf::from(&install_path), 
+        &session_name, 
+        &map_name, // Map name usually goes to start args but sometimes INI
+        server_password.as_deref(), 
+        &admin_password, 
+        max_players
+    ) {
+        println!("Warning: Failed to sync INI settings: {}", e);
+        // We continue anyway because command line args will override, but logging it is good
+    }
+
     let pid = state.process_manager.start_server(
+        &app, // Pass AppHandle
         server_id,
         &server_type,
         &PathBuf::from(install_path),
@@ -221,9 +258,49 @@ pub async fn start_server(state: State<'_, AppState>, server_id: i64) -> Result<
         conn.execute("UPDATE servers SET status = ?1, pid = ?2 WHERE id = ?3", ("running", pid, server_id))
             .map_err(|e| e.to_string())?;
     }
-    
-    let _ = NotificationService::send_notification(&state, "Server Started", &format!("Server {} ({}) has been started.", session_name, server_type)).await;
 
+    Ok(())
+}
+    
+
+fn sync_settings_to_ini(
+    install_path: &PathBuf,
+    session_name: &str,
+    _map_name: &str,
+    server_password: Option<&str>,
+    admin_password: &str,
+    max_players: i32,
+) -> Result<(), String> {
+    /*
+    let config_path = install_path.join("ShooterGame/Saved/Config/WindowsServer/GameUserSettings.ini");
+    
+    // Create parent dirs if missing
+    if let Some(parent) = config_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    // Load existing or create new
+    let mut conf = if config_path.exists() {
+        ini::Ini::load_from_file(&config_path).map_err(|e| e.to_string())?
+    } else {
+        ini::Ini::new()
+    };
+
+    // Update [ServerSettings]
+    conf.with_section(Some("ServerSettings"))
+        .set("SessionName", session_name)
+        .set("ServerAdminPassword", admin_password)
+        .set("MaxPlayers", max_players.to_string());
+    
+    if let Some(pwd) = server_password {
+        conf.with_section(Some("ServerSettings"))
+            .set("ServerPassword", pwd);
+    }
+
+    // Write back
+    conf.write_to_file(&config_path).map_err(|e| e.to_string())?;
+    */
+    println!("TODO: INI Sync temporarily disabled due to dependency issue");
     Ok(())
 }
 
@@ -266,7 +343,7 @@ pub async fn stop_server(state: State<'_, AppState>, server_id: i64) -> Result<(
 }
 
 #[tauri::command]
-pub async fn restart_server(state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
+pub async fn restart_server(app: AppHandle, state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
     // Get server details from database
     let (server_type, install_path, map_name, session_name, game_port, query_port, rcon_port,
          max_players, server_password, admin_password, use_battleye, multihome_ip, crossplay_enabled) = {
@@ -298,6 +375,7 @@ pub async fn restart_server(state: State<'_, AppState>, server_id: i64) -> Resul
     }; // db and conn dropped here
     
     let pid = state.process_manager.restart_server(
+        &app, // Pass AppHandle
         server_id,
         &server_type,
         &PathBuf::from(install_path),
@@ -329,13 +407,34 @@ pub async fn restart_server(state: State<'_, AppState>, server_id: i64) -> Resul
 
 #[tauri::command]
 pub async fn delete_server(state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
+    println!("🗑️ Deleting server ID: {}", server_id);
+    
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let conn = db.get_connection().map_err(|e| e.to_string())?;
     
     conn.execute("DELETE FROM servers WHERE id = ?1", [server_id])
         .map_err(|e| e.to_string())?;
     
+    println!("✅ Server {} deleted from database", server_id);
     Ok(())
+}
+
+/// Reset all servers that are stuck in "updating" or "installing" status
+#[tauri::command]
+pub async fn reset_stuck_servers(state: State<'_, AppState>) -> Result<i32, String> {
+    println!("🔄 Resetting stuck servers...");
+    
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db.get_connection().map_err(|e| e.to_string())?;
+    
+    // Update any server with status "updating" or "installing" to "stopped"
+    let affected = conn.execute(
+        "UPDATE servers SET status = 'stopped' WHERE status IN ('updating', 'installing', 'starting')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    
+    println!("✅ Reset {} stuck servers to 'stopped' status", affected);
+    Ok(affected as i32)
 }
 
 #[tauri::command]

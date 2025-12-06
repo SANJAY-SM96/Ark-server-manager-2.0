@@ -5,12 +5,16 @@ import { createBackup, getBackups, restoreBackup, deleteBackup, updateBackup, vi
 import { Backup } from '../types';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
+import { useUIStore } from '../stores/uiStore';
 
 export default function Backups() {
     const [backups, setBackups] = useState<Backup[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const { servers } = useServerStore();
+    const { gameMode } = useUIStore();
     const [selectedServerId, setSelectedServerId] = useState<number | null>(null);
+
+    const filteredServers = servers.filter(s => s.serverType === gameMode);
 
     // Modals
     const [viewingFiles, setViewingFiles] = useState<{ id: number, path: string, files: BackupFileInfo[] } | null>(null);
@@ -19,10 +23,15 @@ export default function Backups() {
 
     // Select first server by default
     useEffect(() => {
-        if (servers.length > 0 && !selectedServerId) {
-            setSelectedServerId(servers[0].id);
+        if (filteredServers.length > 0) {
+            // If no server selected or selected server not in current filtered list, select first
+            if (!selectedServerId || !filteredServers.find(s => s.id === selectedServerId)) {
+                setSelectedServerId(filteredServers[0].id);
+            }
+        } else {
+            setSelectedServerId(null);
         }
-    }, [servers, selectedServerId]);
+    }, [filteredServers, selectedServerId]);
 
     const fetchBackups = async () => {
         if (!selectedServerId) return;
@@ -127,7 +136,7 @@ export default function Backups() {
                         onChange={(e) => setSelectedServerId(Number(e.target.value))}
                         className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     >
-                        {servers.map(server => (
+                        {filteredServers.map(server => (
                             <option key={server.id} value={server.id}>{server.name}</option>
                         ))}
                     </select>
@@ -136,8 +145,8 @@ export default function Backups() {
                         onClick={handleCreateBackup}
                         disabled={!selectedServerId}
                         className={`flex items-center space-x-2 px-6 py-2 rounded-lg transition-colors shadow-lg font-medium ${!selectedServerId
-                                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                                : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-500/20'
+                            ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                            : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-500/20'
                             }`}
                     >
                         <Plus className="w-5 h-5" />

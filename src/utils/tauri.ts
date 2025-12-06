@@ -98,6 +98,10 @@ export async function getServerVersion(serverId: number): Promise<string> {
     return await invoke('get_server_version', { serverId });
 }
 
+export async function resetStuckServers(): Promise<number> {
+    return await invoke('reset_stuck_servers');
+}
+
 // ============================================================================
 // Mod Commands
 // ============================================================================
@@ -136,6 +140,10 @@ export async function readConfig(serverId: number, configType: string): Promise<
 
 export async function saveConfig(serverId: number, configType: string, content: string): Promise<void> {
     return await invoke('save_config', { serverId, configType, content });
+}
+
+export async function getConfigModifiedTime(serverId: number, configType: string): Promise<number> {
+    return await invoke('get_config_modified_time', { serverId, configType });
 }
 
 // ============================================================================
@@ -361,3 +369,39 @@ export async function setGitHubRepo(repo: string): Promise<void> {
     return await invoke('set_github_repo', { repo });
 }
 
+// ============================================================================
+// Discord Bot Commands
+// ============================================================================
+
+export interface DiscordBotConfig {
+    token: string;
+    enabled: boolean;
+    guild_id: string | null;
+    admin_role_id: string | null;
+    allowed_channels: string[];
+}
+
+export interface DiscordBotStatus {
+    is_running: boolean;
+    connected: boolean;
+}
+
+export async function startDiscordBot(token: string, guildId?: string): Promise<void> {
+    return await invoke('start_discord_bot', { token, guildId });
+}
+
+export async function stopDiscordBot(): Promise<void> {
+    return await invoke('stop_discord_bot');
+}
+
+export async function getDiscordBotStatus(): Promise<DiscordBotStatus> {
+    return await invoke('get_discord_bot_status');
+}
+
+export async function setDiscordBotConfig(config: DiscordBotConfig): Promise<void> {
+    return await invoke('set_discord_bot_config', { config });
+}
+
+export async function getDiscordBotConfig(): Promise<DiscordBotConfig> {
+    return await invoke('get_discord_bot_config');
+}

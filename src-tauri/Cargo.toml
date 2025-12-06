@@ -1,6 +1,6 @@
 [package]
 name = "ark-server-manager"
-version = "2.0.0"
+version = "2.2.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -41,7 +41,9 @@ rcon = "0.5"
 cron = "0.12"
 local-ip-address = "0.6"
 walkdir = "2"
-
+semver = "1.0.27"
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend"] }
+async-trait = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

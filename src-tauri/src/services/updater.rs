@@ -105,6 +105,7 @@ impl ServerUpdateService {
                 };
 
                 state.process_manager.start_server(
+                    &app_handle,
                     server_id,
                     &server_type,
                     &path,

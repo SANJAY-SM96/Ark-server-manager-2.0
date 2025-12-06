@@ -117,6 +117,7 @@ impl ServerMonitorService {
 
                                             if let Ok((server_type, install_path, map_name, session_name, game_port, query_port, rcon_port, max_players, server_password, admin_password, use_battleye, multihome_ip, crossplay_enabled)) = details {
                                                 match state.process_manager.start_server(
+                                                    &app_handle,
                                                     server_id,
                                                     &server_type,
                                                     &PathBuf::from(install_path),

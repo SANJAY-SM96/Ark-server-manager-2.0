@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Save, Loader2, FileText, Settings, Database, Shield, Globe, Search, RotateCcw, Package, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Save, Loader2, FileText, Settings, Database, Shield, Globe, Search, RotateCcw, Package, X, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { cn } from '../utils/helpers';
-import { readConfig, saveConfig, setCrossplayEnabled, setBattlEye } from '../utils/tauri';
+import { readConfig, saveConfig, setCrossplayEnabled, setBattlEye, getConfigModifiedTime } from '../utils/tauri';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
+import { useUIStore } from '../stores/uiStore';
 import { useLocation } from 'react-router-dom';
 import {
     ASE_GAME_USER_SETTINGS_SCHEMA,
@@ -14,6 +15,9 @@ import {
     CONFIG_PRESETS,
     ConfigPreset
 } from '../data/configMappings';
+import LevelGenerator from '../components/config/LevelGenerator';
+import CodeEditor from '../components/config/CodeEditor';
+import ModSettings from '../components/config/ModSettings';
 
 // Simple INI parser/serializer
 const parseIni = (content: string) => {
@@ -49,15 +53,18 @@ const stringifyIni = (config: Record<string, Record<string, string>>) => {
 
 export default function ConfigEditor() {
     const location = useLocation();
-    const [activeTab, setActiveTab] = useState<'visual' | 'raw'>('visual');
+    const [activeTab, setActiveTab] = useState<'visual' | 'raw' | 'levels' | 'mods'>('visual');
     const [configContent, setConfigContent] = useState('');
     const [parsedConfig, setParsedConfig] = useState<Record<string, Record<string, string>>>({});
     const [originalConfig, setOriginalConfig] = useState<Record<string, Record<string, string>>>({});
     const [configFile, setConfigFile] = useState<string>('General');
     const [isLoading, setIsLoading] = useState(false);
     const { servers, refreshServers } = useServerStore();
+    const { gameMode } = useUIStore();
     const [selectedServerId, setSelectedServerId] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredServers = servers.filter(s => s.serverType === gameMode);
     const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
     const [showPresetDialog, setShowPresetDialog] = useState(false);
     const [showModifiedOnly, setShowModifiedOnly] = useState(false);
@@ -73,39 +80,81 @@ export default function ConfigEditor() {
     }, [location.state]);
 
     // Select first server by default
+    // Select first server by default
     useEffect(() => {
-        if (servers.length > 0 && !selectedServerId) {
-            setSelectedServerId(servers[0].id);
+        if (filteredServers.length > 0) {
+            if (!selectedServerId || !filteredServers.find(s => s.id === selectedServerId)) {
+                setSelectedServerId(filteredServers[0].id);
+            }
+        } else {
+            if (selectedServerId && !filteredServers.find(s => s.id === selectedServerId)) {
+                setSelectedServerId(null);
+            }
         }
-    }, [servers, selectedServerId]);
+    }, [filteredServers, selectedServerId]);
 
     // Load config
+    const loadConfigRef = useRef<((showLoading?: boolean) => Promise<void>) | null>(null);
+    const lastModifiedRef = useRef<number>(0);
+    const [autoSyncEnabled] = useState(true);
+
+    const loadConfig = useCallback(async (showLoading = true) => {
+        if (!selectedServerId) return;
+
+        if (configFile === 'General') {
+            setIsLoading(false);
+            return;
+        }
+
+        if (showLoading) setIsLoading(true);
+        try {
+            const content = await readConfig(selectedServerId, configFile);
+            setConfigContent(content);
+            const parsed = parseIni(content);
+            setParsedConfig(parsed);
+            setOriginalConfig(JSON.parse(JSON.stringify(parsed))); // Deep copy
+
+            // Update last modified time
+            const modTime = await getConfigModifiedTime(selectedServerId, configFile);
+            lastModifiedRef.current = modTime;
+        } catch (error) {
+            console.error('Failed to load config:', error);
+            if (showLoading) toast.error('Failed to load config');
+        } finally {
+            if (showLoading) setIsLoading(false);
+        }
+    }, [selectedServerId, configFile]);
+
+    loadConfigRef.current = loadConfig;
+
     useEffect(() => {
-        const loadConfig = async () => {
-            if (!selectedServerId) return;
+        loadConfig();
+    }, [loadConfig]);
 
-            if (configFile === 'General') {
-                setIsLoading(false);
-                return;
-            }
+    // Real-time sync: poll for config file changes every 3 seconds
+    useEffect(() => {
+        if (!selectedServerId || configFile === 'General' || !autoSyncEnabled) return;
 
-            setIsLoading(true);
+        const checkForChanges = async () => {
             try {
-                const content = await readConfig(selectedServerId, configFile);
-                setConfigContent(content);
-                const parsed = parseIni(content);
-                setParsedConfig(parsed);
-                setOriginalConfig(JSON.parse(JSON.stringify(parsed))); // Deep copy
+                const modTime = await getConfigModifiedTime(selectedServerId, configFile);
+                if (modTime > 0 && modTime !== lastModifiedRef.current) {
+                    // File has been modified externally
+                    lastModifiedRef.current = modTime;
+                    toast.success('Config file updated externally - reloading...', { duration: 2000 });
+                    if (loadConfigRef.current) {
+                        await loadConfigRef.current(false); // Don't show loading spinner
+                    }
+                }
             } catch (error) {
-                console.error('Failed to load config:', error);
-                toast.error('Failed to load config');
-            } finally {
-                setIsLoading(false);
+                console.error('Failed to check config modification time:', error);
             }
         };
 
-        loadConfig();
-    }, [selectedServerId, configFile]);
+        const intervalId = setInterval(checkForChanges, 3000); // Poll every 3 seconds
+
+        return () => clearInterval(intervalId);
+    }, [selectedServerId, configFile, autoSyncEnabled]);
 
     const handleSave = async () => {
         if (!selectedServerId) return;
@@ -554,7 +603,19 @@ export default function ConfigEditor() {
                         )}
                     >
                         <Settings className="w-4 h-4" />
-                        Visual Editor
+                        Visual
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('levels')}
+                        className={cn(
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
+                            activeTab === 'levels'
+                                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                                : 'text-slate-400 hover:text-white'
+                        )}
+                    >
+                        <Zap className="w-4 h-4" />
+                        Levels
                     </button>
                     <button
                         onClick={() => setActiveTab('raw')}
@@ -566,7 +627,19 @@ export default function ConfigEditor() {
                         )}
                     >
                         <FileText className="w-4 h-4" />
-                        Raw Text
+                        Raw
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('mods')}
+                        className={cn(
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
+                            activeTab === 'mods'
+                                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                                : 'text-slate-400 hover:text-white'
+                        )}
+                    >
+                        <Package className="w-4 h-4" />
+                        Mods
                     </button>
                 </div>
             </div>
@@ -582,7 +655,7 @@ export default function ConfigEditor() {
                                 onChange={(e) => setSelectedServerId(Number(e.target.value))}
                                 className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
                             >
-                                {servers.map(server => (
+                                {filteredServers.map(server => (
                                     <option key={server.id} value={server.id}>{server.name} ({server.serverType})</option>
                                 ))}
                             </select>
@@ -690,12 +763,30 @@ export default function ConfigEditor() {
                     renderGeneralSettings()
                 ) : activeTab === 'visual' ? (
                     renderVisualEditor()
+                ) : activeTab === 'levels' ? (
+                    <LevelGenerator
+                        onApplyToConfig={(iniCode) => {
+                            // Append level config to Game.ini content
+                            setConfigFile('Game');
+                            setConfigContent(prev => prev + '\n\n' + iniCode);
+                            toast.success('Level configuration added to Game.ini');
+                        }}
+                    />
+                ) : activeTab === 'mods' ? (
+                    <ModSettings
+                        onApplySettings={(settings) => {
+                            // Append mod settings to Game.ini content
+                            setConfigFile('Game');
+                            setConfigContent(prev => prev + '\n\n' + settings);
+                            toast.success('Mod settings added to Game.ini');
+                        }}
+                    />
                 ) : (
-                    <textarea
+                    <CodeEditor
                         value={configContent}
-                        onChange={(e) => setConfigContent(e.target.value)}
-                        className="w-full h-[70vh] bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none leading-relaxed"
-                        spellCheck={false}
+                        onChange={setConfigContent}
+                        language="ini"
+                        placeholder="Enter INI configuration..."
                     />
                 )}
             </div>

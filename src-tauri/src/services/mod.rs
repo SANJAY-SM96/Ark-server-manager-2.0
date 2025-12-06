@@ -1,5 +1,6 @@
 pub mod api_key_manager;
 pub mod app_updater;
+pub mod discord_bot;
 pub mod file_manager;
 pub mod health_checker;
 pub mod mod_compatibility;

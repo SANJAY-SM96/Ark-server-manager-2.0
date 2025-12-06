@@ -9,6 +9,7 @@ use db::Database;
 use services::process_manager::ProcessManager;
 use services::steamcmd::SteamCmdService;
 use services::scheduler::SchedulerService;
+use services::discord_bot::DiscordBotHandle;
 use std::sync::Mutex;
 use tauri::Manager;
 use sysinfo::System;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub db: Mutex<Database>,
     pub process_manager: ProcessManager,
     pub sys: Mutex<System>,
+    pub discord_bot: Mutex<DiscordBotHandle>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,6 +46,7 @@ pub fn run() {
                 db: Mutex::new(db),
                 process_manager: ProcessManager::new(),
                 sys: Mutex::new(sys),
+                discord_bot: Mutex::new(DiscordBotHandle::new()),
             });
 
             // Check and install SteamCMD
@@ -71,17 +74,51 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app_handle = window.app_handle();
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    // Clean up dead processes first to get accurate count
+                    let _ = state.process_manager.check_dead_processes();
+                    
+                    if state.process_manager.has_running_processes() {
+                        // Prevent close
+                        api.prevent_close();
+                        
+                        // Show confirmation dialog
+                        let w = window.clone();
+                        tauri::async_runtime::spawn(async move {
+                            use tauri_plugin_dialog::DialogExt;
+                            let answer = w.dialog()
+                                .message("You have servers running. Are you sure you want to quit? This will stop all servers.")
+                                .title("Servers Running")
+                                .blocking_show();
+                                
+                            if answer {
+                                w.close(); // Force close logic or graceful shutdown?
+                                // If we call close() again, it might trigger this event again.
+                                // We need to stop servers or exit app.
+                                // Simplest is app_handle.exit(0), but that's abrupt.
+                                // Better: Stop servers then exit.
+                                // For now, let's just exit.
+                                std::process::exit(0);
+                            }
+                        });
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // System commands
             commands::system::get_system_info,
             commands::system::select_folder,
-            commands::system::get_setting,
             commands::system::get_setting,
             commands::system::set_setting,
             test_discord_webhook,
             // Config commands
             commands::config::read_config,
             commands::config::save_config,
+            commands::config::get_config_modified_time,
             // Server commands
             commands::server::get_all_servers,
             commands::server::get_server_by_id,
@@ -95,6 +132,7 @@ pub fn run() {
             commands::server::set_auto_restart,
             commands::server::set_auto_update,
             commands::server::update_server_graceful,
+            commands::server::reset_stuck_servers,
             // Mod commands
             commands::mods::search_mods,
             commands::mods::install_mod,
@@ -155,6 +193,12 @@ pub fn run() {
             commands::dependencies::install_steamcmd,
             commands::dependencies::get_steamcmd_path,
             commands::dependencies::check_all_dependencies,
+            // Discord Bot commands
+            commands::discord::start_discord_bot,
+            commands::discord::stop_discord_bot,
+            commands::discord::get_discord_bot_status,
+            commands::discord::set_discord_bot_config,
+            commands::discord::get_discord_bot_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

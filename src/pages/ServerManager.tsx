@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Plus, Play, Square, RotateCw, Trash2, Download, Settings, Terminal, Globe, Shield } from 'lucide-react';
+import { Plus, Play, Square, RotateCw, Trash2, Download, Settings, Terminal, Globe, Shield, RefreshCcw } from 'lucide-react';
 import { useServerStore } from '../stores/serverStore';
+import { useUIStore } from '../stores/uiStore';
 import { cn } from '../utils/helpers';
 import InstallServerDialog from '../components/server/InstallServerDialog';
-import { startServer, stopServer, restartServer, deleteServer, getAllServers, updateServerGraceful, setAutoRestart } from '../utils/tauri';
+import { startServer, stopServer, restartServer, deleteServer, getAllServers, updateServerGraceful, setAutoRestart, resetStuckServers } from '../utils/tauri';
 import toast from 'react-hot-toast';
 
 import { useNavigate } from 'react-router-dom';
@@ -11,7 +12,10 @@ import { useNavigate } from 'react-router-dom';
 export default function ServerManager() {
     const navigate = useNavigate();
     const { servers, setServers, removeServer, updateServerStatus } = useServerStore();
+    const { gameMode } = useUIStore();
     const [showInstallDialog, setShowInstallDialog] = useState(false);
+
+    const filteredServers = servers.filter(s => s.serverType === gameMode);
 
     useEffect(() => {
         // Initial fetch
@@ -107,34 +111,48 @@ export default function ServerManager() {
         }
     };
 
+    // Reset a server stuck in updating/installing status
+    const handleResetStuck = async () => {
+        try {
+            await resetStuckServers();
+            toast.success('Server status reset to stopped');
+            await getAllServers().then(setServers);
+        } catch (error) {
+            toast.error(`Failed to reset: ${error}`);
+        }
+    };
+
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-violet-400">
-                        Server Manager
+                    <h1 className={cn("text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r",
+                        gameMode === 'ASE' ? "from-sky-400 to-blue-400" : "from-violet-400 to-fuchsia-400")}>
+                        {gameMode === 'ASE' ? 'Survival Evolved' : 'Survival Ascended'} Servers
                     </h1>
-                    <p className="text-slate-400 mt-2 text-lg">Deploy and manage your ARK instances</p>
+                    <p className="text-slate-400 mt-2 text-lg">Deploy and manage your {gameMode} instances</p>
                 </div>
                 <button
                     onClick={() => setShowInstallDialog(true)}
-                    className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white rounded-xl transition-all shadow-lg shadow-sky-500/20 font-medium group"
+                    className={cn("flex items-center space-x-2 px-6 py-3 bg-gradient-to-r text-white rounded-xl transition-all shadow-lg font-medium group",
+                        gameMode === 'ASE' ? "from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-sky-500/20" : "from-violet-500 to-fuchsia-600 hover:from-violet-400 hover:to-fuchsia-500 shadow-violet-500/20"
+                    )}
                 >
                     <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                    <span>Deploy Server</span>
+                    <span>Deploy {gameMode} Server</span>
                 </button>
             </div>
 
             {/* Server List */}
-            {servers.length === 0 ? (
+            {filteredServers.length === 0 ? (
                 <div className="glass-panel rounded-2xl p-16 text-center border-2 border-dashed border-slate-700/50">
                     <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Plus className="w-10 h-10 text-slate-500" />
                     </div>
-                    <h3 className="text-2xl font-bold text-white mb-2">No Servers Installed</h3>
+                    <h3 className="text-2xl font-bold text-white mb-2">No {gameMode} Servers Installed</h3>
                     <p className="text-slate-400 mb-8 max-w-md mx-auto">
-                        Your server fleet is currently empty. Launch your first ARK server to begin your journey.
+                        Your {gameMode} server fleet is currently empty. Launch your first server to begin your journey.
                     </p>
                     <button
                         onClick={() => setShowInstallDialog(true)}
@@ -145,10 +163,11 @@ export default function ServerManager() {
                 </div>
             ) : (
                 <div className="grid gap-6">
-                    {servers.map((server) => (
+                    {filteredServers.map((server, index) => (
                         <div
                             key={server.id}
-                            className="glass-panel rounded-2xl p-6 hover:border-sky-500/30 transition-all group relative overflow-hidden"
+                            className="glass-panel rounded-2xl p-6 hover:border-sky-500/30 transition-all group relative overflow-hidden hover-lift fade-slide-in"
+                            style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
                         >
                             <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-sky-500/5 to-transparent rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
 
@@ -205,7 +224,17 @@ export default function ServerManager() {
 
                                 {/* Actions */}
                                 <div className="flex items-center gap-3">
-                                    {server.status === 'stopped' || server.status === 'crashed' ? (
+                                    {/* Show Resume button for stuck installations */}
+                                    {server.status === 'updating' ? (
+                                        <button
+                                            onClick={() => handleResetStuck()}
+                                            className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg transition-all"
+                                            title="Reset stuck installation"
+                                        >
+                                            <RefreshCcw className="w-4 h-4" />
+                                            <span className="text-sm font-medium">Reset Status</span>
+                                        </button>
+                                    ) : server.status === 'stopped' || server.status === 'crashed' ? (
                                         <button
                                             onClick={() => handleStartServer(server.id)}
                                             className="p-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 rounded-lg transition-all hover:scale-105 active:scale-95"
