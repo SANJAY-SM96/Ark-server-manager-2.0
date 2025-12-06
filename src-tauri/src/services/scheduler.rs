@@ -75,7 +75,7 @@ impl SchedulerService {
                                 let _ = server::restart_server(state.clone(), server_id).await;
                             },
                             "backup" => {
-                                let _ = backup::create_backup(state.clone(), server_id, "auto".to_string()).await;
+                                let _ = backup::create_backup(state.clone(), server_id, "auto".to_string(), None).await;
                             },
                             "update" => {
                                 let _ = server::update_server(app_handle.clone(), state.clone(), server_id).await;

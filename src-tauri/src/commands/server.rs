@@ -86,7 +86,7 @@ pub async fn install_server(
             &name,
             &server_type,
             &install_path,
-            "installing", // Set status to installing
+            "updating", // Set status to updating (as installing is not in DB constraint)
             game_port,
             query_port,
             rcon_port,

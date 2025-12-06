@@ -43,10 +43,10 @@ struct CurseForgeLinks {
 pub async fn search_steam_workshop(query: &str) -> Result<Vec<ModInfo>, Box<dyn Error>> {
     let client = Client::new();
     
-    // If query is generic (like 'ark'), show trending instead of text search
-    let url = if query.len() <= 3 {
+    // If query is generic (like 'ark') or empty, show trending instead of text search
+    let url = if query.trim().is_empty() || query.len() <= 3 {
         format!(
-            "https://steamcommunity.com/workshop/browse/?appid=346110&browsesort=trend&section=readytouseitems"
+            "https://steamcommunity.com/workshop/browse/?appid=346110&browsesort=trend&section=readytouseitems&actualsort=trend&p=1&days=365"
         )
     } else {
         format!(
@@ -148,7 +148,13 @@ pub async fn search_curseforge(query: &str, api_key: Option<String>) -> Result<V
     // ARK Survival Ascended Game ID: 951374
     let game_id = 951374; 
 
-    let url = format!("{}/mods/search?gameId={}&searchFilter={}", CURSEFORGE_API_URL, game_id, query);
+    let url = if query.trim().is_empty() {
+        // Sort by Popularity (Rank 2 usually, or simply no filter implies popularity/featured)
+        // sortField=2 (Popularity), sortOrder=desc
+        format!("{}/mods/search?gameId={}&sortField=2&sortOrder=desc", CURSEFORGE_API_URL, game_id)
+    } else {
+        format!("{}/mods/search?gameId={}&searchFilter={}", CURSEFORGE_API_URL, game_id, query)
+    };
     
     println!("  → CurseForge URL: {}", url);
     println!("  → API Key length: {}", api_key.len());

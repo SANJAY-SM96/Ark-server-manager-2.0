@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Search, Download, X, Loader2, ExternalLink, ShoppingCart, Trash2 } from 'lucide-react';
+import { Search, Download, X, Loader2, ExternalLink, ShoppingCart, Trash2, CheckCircle2 } from 'lucide-react';
 import { cn } from '../utils/helpers';
-import { searchMods, getInstalledMods, updateActiveMods, installModsBatch } from '../utils/tauri';
+import { searchMods, getInstalledMods, updateActiveMods, installModsBatch, uninstallMod } from '../utils/tauri';
 import { ModInfo } from '../types';
 import toast from 'react-hot-toast';
 import { useServerStore } from '../stores/serverStore';
+import { listen } from '@tauri-apps/api/event';
+
+interface InstallProgress {
+    modId: string;
+    progress: number;
+    status: 'pending' | 'downloading' | 'installed' | 'error';
+}
 
 export default function ModManager() {
     const [searchQuery, setSearchQuery] = useState('');
@@ -16,11 +23,14 @@ export default function ModManager() {
     const [isLoading, setIsLoading] = useState(false);
     const { servers } = useServerStore();
     const [selectedServerId, setSelectedServerId] = useState<number | null>(null);
+    const [installProgress, setInstallProgress] = useState<Record<string, InstallProgress>>({});
+    const [isInstalling, setIsInstalling] = useState(false);
 
     // Auto-load popular mods or search
+    // Search mods when query changes
     useEffect(() => {
         const fetchMods = async () => {
-            const searchTerm = searchQuery.trim() || (serverType === 'ASE' ? 'ark' : 'dino');
+            const searchTerm = searchQuery.trim();
             setIsLoading(true);
             try {
                 const results = await searchMods(searchTerm, serverType);
@@ -65,11 +75,34 @@ export default function ModManager() {
         }
     };
 
+    // Listen for install progress
+    useEffect(() => {
+        const unlistenStart = listen<string>('mod-download-start', (event) => {
+            const modId = event.payload;
+            setInstallProgress(prev => ({
+                ...prev,
+                [modId]: { modId, progress: 0, status: 'downloading' }
+            }));
+        });
+
+        const unlistenProgress = listen<{ modId: string, progress: number }>('mod-download-progress', (event) => {
+            const { modId, progress } = event.payload;
+            setInstallProgress(prev => ({
+                ...prev,
+                [modId]: { ...prev[modId], progress, status: 'downloading' }
+            }));
+        });
+
+        return () => {
+            unlistenStart.then(f => f());
+            unlistenProgress.then(f => f());
+        };
+    }, []);
+
     const handleUninstallMod = async (modId: string) => {
-        if (!selectedServerId || !confirm('Are you sure you want to uninstall this mod?')) return;
+        if (!selectedServerId || !confirm('Are you sure you want to uninstall this mod? This will delete the mod files.')) return;
         try {
-            const newMods = mods.filter(m => m.id !== modId).map(m => m.id);
-            await updateActiveMods(selectedServerId, newMods);
+            await uninstallMod(selectedServerId, modId);
             toast.success('Mod uninstalled');
             loadInstalledMods();
         } catch (error) {
@@ -103,6 +136,7 @@ export default function ModManager() {
     };
 
     const removeFromCart = (modId: string) => {
+        if (isInstalling) return;
         setCart(cart.filter(m => m.id !== modId));
     };
 
@@ -113,15 +147,40 @@ export default function ModManager() {
         }
         if (cart.length === 0) return;
 
+        setIsInstalling(true);
+        // Initialize progress
+        const initialProgress: Record<string, InstallProgress> = {};
+        cart.forEach(m => {
+            initialProgress[m.id] = { modId: m.id, progress: 0, status: 'pending' };
+        });
+        setInstallProgress(initialProgress);
+
         try {
             setIsLoading(true);
             await installModsBatch(selectedServerId, cart.map(m => m.id));
+
+            // Mark all as installed on success if not already
+            setInstallProgress(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(key => {
+                    next[key] = { ...next[key], progress: 100, status: 'installed' };
+                });
+                return next;
+            });
+
             toast.success(`Successfully installed ${cart.length} mods!`);
-            setCart([]);
-            setIsCartOpen(false);
-            if (activeTab === 'installed') loadInstalledMods();
+            setTimeout(() => {
+                setCart([]);
+                setIsCartOpen(false);
+                setIsInstalling(false);
+                setInstallProgress({});
+                if (activeTab === 'installed') loadInstalledMods();
+            }, 2000);
+
         } catch (error) {
             toast.error(`Failed to install mods: ${error}`);
+            setIsInstalling(false);
+            // Mark pending as error? Or keep them to retry? 
         } finally {
             setIsLoading(false);
         }
@@ -154,13 +213,14 @@ export default function ModManager() {
                     </button>
 
                     <div className="flex bg-slate-800/50 rounded-lg p-1 border border-slate-700 mr-4">
-                        <button onClick={() => setServerType('ASE')} className={cn('px-4 py-1.5 rounded-md text-sm font-medium transition-all', serverType === 'ASE' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white')}>ASE (Steam)</button>
-                        <button onClick={() => setServerType('ASA')} className={cn('px-4 py-1.5 rounded-md text-sm font-medium transition-all', serverType === 'ASA' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white')}>ASA (CF)</button>
+                        <button onClick={() => setServerType('ASE')} disabled={isInstalling} className={cn('px-4 py-1.5 rounded-md text-sm font-medium transition-all', serverType === 'ASE' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white', isInstalling && 'opacity-50 cursor-not-allowed')}>ASE (Steam)</button>
+                        <button onClick={() => setServerType('ASA')} disabled={isInstalling} className={cn('px-4 py-1.5 rounded-md text-sm font-medium transition-all', serverType === 'ASA' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white', isInstalling && 'opacity-50 cursor-not-allowed')}>ASA (CF)</button>
                     </div>
                     <select
                         value={selectedServerId || ''}
+                        disabled={isInstalling}
                         onChange={(e) => setSelectedServerId(Number(e.target.value))}
-                        className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                        className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
                     >
                         {servers.map(server => (
                             <option key={server.id} value={server.id}>{server.name}</option>
@@ -177,7 +237,7 @@ export default function ModManager() {
                             <ShoppingCart className="w-5 h-5 text-sky-400" />
                             Mod Cart ({cart.length})
                         </h2>
-                        <button onClick={() => setIsCartOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                        {!isInstalling && <button onClick={() => setIsCartOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>}
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
@@ -186,27 +246,50 @@ export default function ModManager() {
                                 Your cart is empty. <br /> Add mods to install them in batch.
                             </div>
                         ) : (
-                            cart.map(mod => (
-                                <div key={mod.id} className="bg-slate-800/50 p-3 rounded-lg border border-slate-700 flex gap-3">
-                                    <img src={mod.thumbnailUrl || ''} alt="" className="w-12 h-12 rounded object-cover" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-slate-200 truncate">{mod.name}</div>
-                                        <div className="text-xs text-slate-500">ID: {mod.id}</div>
+                            cart.map(mod => {
+                                const status = installProgress[mod.id];
+                                return (
+                                    <div key={mod.id} className="bg-slate-800/50 p-3 rounded-lg border border-slate-700 flex flex-col gap-2">
+                                        <div className="flex gap-3">
+                                            <img src={mod.thumbnailUrl || ''} alt="" className="w-12 h-12 rounded object-cover" />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-medium text-slate-200 truncate">{mod.name}</div>
+                                                <div className="text-xs text-slate-500">ID: {mod.id}</div>
+                                            </div>
+                                            {!isInstalling && <button onClick={() => removeFromCart(mod.id)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>}
+                                            {status?.status === 'installed' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                                        </div>
+
+                                        {status && (
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between text-xs text-slate-400">
+                                                    <span>{status.status === 'downloading' ? 'Downloading...' : status.status === 'installed' ? 'Installed' : 'Pending'}</span>
+                                                    <span>{status.progress.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={cn("h-full transition-all duration-300",
+                                                            status.status === 'installed' ? "bg-green-500" : "bg-sky-500"
+                                                        )}
+                                                        style={{ width: `${status.progress}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <button onClick={() => removeFromCart(mod.id)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-slate-700">
                         <button
                             onClick={handleInstallBatch}
-                            disabled={cart.length === 0 || isLoading}
+                            disabled={cart.length === 0 || isLoading || isInstalling}
                             className="w-full py-3 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 transition-all"
                         >
                             {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                            Install {cart.length} Mods
+                            {isInstalling ? 'Installing...' : `Install ${cart.length} Mods`}
                         </button>
                     </div>
                 </div>

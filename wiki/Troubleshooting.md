@@ -17,6 +17,32 @@ Before diving into specific issues, try these quick checks:
 
 ## 🚨 Installation Issues
 
+### ⚠️ Windows Defender SmartScreen Warning
+
+**This is the MOST COMMON installation issue!**
+
+![Windows SmartScreen Warning](../uploaded_image_1764970042154.png)
+
+**Symptoms:**
+- Red popup saying "Windows protected your PC"
+- "Microsoft Defender SmartScreen prevented an unrecognized app from starting"
+- App: `ARKServerManager2.0_2.0.0_x64-setup.exe`
+- Publisher: `Unknown publisher`
+
+**Why This Happens:**
+The application is not digitally signed with a code signing certificate, so Windows flags it as potentially unsafe. This is normal for open-source applications.
+
+**Solution:**
+
+1. **Click "More info"** on the Windows Defender popup
+2. Click **"Run anyway"** button that appears
+3. The installation will proceed normally
+
+> [!NOTE]
+> This warning appears because the app isn't signed with an expensive code signing certificate ($300+/year). The app is completely safe - it's open source and you can review the code on GitHub.
+
+---
+
 ### App Won't Install
 
 **Symptoms:**
@@ -39,37 +65,46 @@ Before diving into specific issues, try these quick checks:
    - Ensure 500 MB free on C: drive
    - Run: `cleanmgr` to free up space
 
-4. **Windows SmartScreen**
-   - Click "More info" → "Run anyway"
-   - This is normal for new applications
+### SteamCMD Installation Fails
 
-###  SteamCMD Installation Fails
+> [!IMPORTANT]
+> SteamCMD is **automatically installed** on first launch during the onboarding process. You don't need to install it manually!
 
 **Symptoms:**
-- "Failed to install SteamCMD" error
+- "Failed to install SteamCMD" error during onboarding
 - Onboarding dialog stuck at "Downloading..."
+- Dashboard shows "SteamCMD: Not Installed"
 
 **Solutions:**
 
-1. **Check Internet Connection**
+1. **Let It Auto-Install**
+   - After bypassing the SmartScreen warning and installing the app
+   - Launch the app for the first time
+   - The onboarding wizard will automatically download and install SteamCMD
+   - This may take 2-5 minutes depending on your connection
+
+2. **Check Internet Connection**
    - Test: `ping steamcdn-a.akamaihd.net`
    - Ensure firewall allows outbound connections
+   - Disable VPN temporarily if having issues
 
-2. **Retry Installation**
+3. **Retry Installation**
    - Click "Retry" button in error dialog
-   - Close app and relaunch
+   - Or close app and relaunch
+   - The onboarding wizard will try again
 
-3. **Manual Installation**
+4. **Manual Installation** (Only if auto-install repeatedly fails)
    ```powershell
    # Download SteamCMD
    Invoke-WebRequest -Uri "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip" -OutFile "$env:TEMP\steamcmd.zip"
    
    # Extract to app directory
-   Expand-Archive -Path "$env:TEMP\steamcmd.zip" -DestinationPath "$env:APPDATA\ark-server-manager\steamcmd\"
+   Expand-Archive -Path "$env:TEMP\steamcmd.zip" -DestinationPath "$env:APPDATA\ark-server-manager\steamcmd\" -Force
    ```
 
-4. **Check Permissions**
+5. **Check Permissions**
    - Ensure app can write to `%APPDATA%\ark-server-manager\`
+   - Run app as administrator if needed
 
 ### VC++ Redistributables Missing
 

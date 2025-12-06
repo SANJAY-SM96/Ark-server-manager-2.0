@@ -98,11 +98,14 @@ pub fn run() {
             commands::mods::install_mods_batch,
             commands::mods::get_installed_mods,
             commands::mods::update_active_mods,
+            commands::mods::uninstall_mod,
             // Backup commands
             commands::backup::create_backup,
             commands::backup::get_backups,
             commands::backup::restore_backup,
             commands::backup::delete_backup,
+            commands::backup::update_backup,
+            commands::backup::view_backup_content,
             // Map commands
             commands::map::update_server_map,
             commands::map::wipe_server_save,

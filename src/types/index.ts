@@ -77,6 +77,7 @@ export interface Backup {
     includesMods: boolean;
     includesSaves: boolean;
     includesCluster: boolean;
+    note?: string;
 }
 
 export interface Cluster {

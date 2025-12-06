@@ -110,6 +110,10 @@ export async function installMod(serverId: number, modId: string): Promise<void>
     return await invoke('install_mod', { serverId, modId });
 }
 
+export async function uninstallMod(serverId: number, modId: string): Promise<void> {
+    return await invoke('uninstall_mod', { serverId, modId });
+}
+
 export async function installModsBatch(serverId: number, modIds: string[]): Promise<void> {
     return await invoke('install_mods_batch', { serverId, modIds });
 }
@@ -152,6 +156,21 @@ export async function restoreBackup(backupId: number): Promise<void> {
 
 export async function deleteBackup(backupId: number): Promise<void> {
     return await invoke('delete_backup', { backupId });
+}
+
+export async function updateBackup(backupId: number, note: string): Promise<void> {
+    return await invoke('update_backup', { backupId, note });
+}
+
+export interface BackupFileInfo {
+    name: string;
+    path: string;
+    size: number;
+    is_dir: boolean;
+}
+
+export async function viewBackupContent(backupPath: string): Promise<BackupFileInfo[]> {
+    return await invoke('view_backup_content', { backupPath });
 }
 
 // ============================================================================

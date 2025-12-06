@@ -38,22 +38,43 @@ export default function Dashboard() {
 
   const [playerCounts, setPlayerCounts] = useState<Record<number, number>>({});
 
+  const [installingSteamCmd, setInstallingSteamCmd] = useState(false);
+
+  const fetchDependencies = async () => {
+    try {
+      setCheckingDeps(true);
+      const deps = await invoke<Dependencies>('check_all_dependencies');
+      setDependencies(deps);
+    } catch (error) {
+      console.error('Failed to check dependencies:', error);
+    } finally {
+      setCheckingDeps(false);
+    }
+  };
+
+  const handleInstallSteamCmd = async () => {
+    try {
+      setInstallingSteamCmd(true);
+      toast.loading('Downloading SteamCMD... This may take a few minutes.', { id: 'steamcmd-install' });
+
+      await invoke('install_steamcmd');
+
+      toast.success('SteamCMD installed successfully!', { id: 'steamcmd-install' });
+      await fetchDependencies();
+    } catch (error) {
+      console.error('Failed to install SteamCMD:', error);
+      toast.error(`Installation failed: ${error}`, { id: 'steamcmd-install' });
+    } finally {
+      setInstallingSteamCmd(false);
+    }
+  };
+
   useEffect(() => {
     // Initial fetch
     getAllServers().then(setServers).catch(console.error);
 
     // Check dependencies
-    const checkDeps = async () => {
-      try {
-        const deps = await invoke<Dependencies>('check_all_dependencies');
-        setDependencies(deps);
-      } catch (error) {
-        console.error('Failed to check dependencies:', error);
-      } finally {
-        setCheckingDeps(false);
-      }
-    };
-    checkDeps();
+    fetchDependencies();
 
     // Fetch Public IP
     fetch('https://api.ipify.org?format=json')
@@ -392,12 +413,14 @@ export default function Dashboard() {
           </div>
         ) : dependencies ? (
           <div className="space-y-3">
-            <DependencyStatus 
+            <DependencyStatus
               name="SteamCMD"
               installed={dependencies.steamcmd_installed}
               checking={checkingDeps}
+              installing={installingSteamCmd}
+              onInstall={!dependencies.steamcmd_installed ? handleInstallSteamCmd : undefined}
             />
-            <DependencyStatus 
+            <DependencyStatus
               name="Visual C++ Redistributables"
               installed={dependencies.vcredist_installed}
               checking={checkingDeps}

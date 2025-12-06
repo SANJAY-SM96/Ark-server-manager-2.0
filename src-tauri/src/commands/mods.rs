@@ -179,7 +179,7 @@ pub async fn get_installed_mods(state: State<'_, AppState>, server_id: i64) -> R
         ).map_err(|e| e.to_string())?
     };
 
-    let config_path = get_config_path(&PathBuf::from(install_path));
+    let config_path = get_config_path(&PathBuf::from(&install_path));
     if !config_path.exists() {
         return Ok(vec![]);
     }
@@ -203,27 +203,105 @@ pub async fn get_installed_mods(state: State<'_, AppState>, server_id: i64) -> R
         }
     }
 
-    if mod_ids.is_empty() {
+    // Verify physical existence
+    let mods_dir = PathBuf::from(&install_path).join("ShooterGame/Content/Mods");
+    let mut present_mods = Vec::new();
+
+    for mod_id in mod_ids {
+        if mods_dir.join(&mod_id).exists() {
+            present_mods.push(mod_id);
+        }
+    }
+
+    if present_mods.is_empty() {
         return Ok(vec![]);
     }
 
     // 2. Fetch Details
     match server_type_str.as_str() {
         "ASE" => {
-            mod_scraper::get_steam_mod_details(mod_ids).await.map_err(|e| e.to_string())
+            mod_scraper::get_steam_mod_details(present_mods).await.map_err(|e| e.to_string())
         },
         "ASA" => {
             let api_key = crate::services::api_key_manager::ApiKeyManager::get_curseforge_key(&state);
-             mod_scraper::get_curseforge_mod_details(mod_ids, api_key).await.map_err(|e| e.to_string())
+             mod_scraper::get_curseforge_mod_details(present_mods, api_key).await.map_err(|e| e.to_string())
         },
         _ => Ok(vec![])
     }
 }
 
 #[tauri::command]
-pub async fn install_mods_batch(state: State<'_, AppState>, server_id: i64, mod_ids: Vec<String>) -> Result<(), String> {
+pub async fn uninstall_mod(state: State<'_, AppState>, server_id: i64, mod_id: String) -> Result<(), String> {
+      // 1. Get install path
+     let install_path: String = {
+         let db = state.db.lock().map_err(|e| e.to_string())?;
+         let conn = db.get_connection().map_err(|e| e.to_string())?;
+         conn.query_row(
+             "SELECT install_path FROM servers WHERE id = ?1",
+             [server_id],
+             |row| row.get(0),
+         ).map_err(|e| e.to_string())?
+     };
+ 
+     // 2. Remove files 
+     let mods_dir = PathBuf::from(&install_path).join("ShooterGame/Content/Mods");
+     let mod_path = mods_dir.join(&mod_id);
+     let mod_file = mods_dir.join(format!("{}.mod", mod_id));
+ 
+     if mod_path.exists() {
+         let _ = fs::remove_dir_all(&mod_path);
+     }
+     if mod_file.exists() {
+         let _ = fs::remove_file(&mod_file);
+     }
+ 
+     // 3. Update active mods in INI (Reuse update logic or call it)
+     // To avoid code duplication, we can call update_active_mods logic.
+     // But wait, update_active_mods takes a LIST of mods to SET.
+     // We need to READ the current list, filter out the one we are removing, and then save.
+     
+     let config_path = get_config_path(&PathBuf::from(install_path));
+     if !config_path.exists() {
+        // If config doesn't exist, we are done (files removed)
+          return Ok(());
+     }
+     
+     let content = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+     let mut new_lines = Vec::new();
+     let mut in_server_settings = false;
+     let mut active_mods_found = false;
+ 
+     for line in content.lines() {
+        if line.trim().eq_ignore_ascii_case("[ServerSettings]") {
+             in_server_settings = true;
+             new_lines.push(line.to_string());
+             continue;
+         }
+         if line.trim().starts_with("[") && line.trim().ends_with("]") {
+             in_server_settings = false;
+         }
+ 
+         if in_server_settings && line.trim().starts_with("ActiveMods=") {
+             active_mods_found = true;
+             let val = line.trim().strip_prefix("ActiveMods=").unwrap_or("");
+             let current_mods: Vec<&str> = val.split(',').filter(|s| !s.is_empty() && *s != mod_id).collect();
+             new_lines.push(format!("ActiveMods={}", current_mods.join(",")));
+         } else {
+             new_lines.push(line.to_string());
+         }
+     }
+     
+     // If we didn't find the ActiveMods line, we don't need to add it because we are removing.
+ 
+     fs::write(config_path, new_lines.join("\n")).map_err(|e| e.to_string())?;
+     
+     Ok(())
+ }
+
+#[tauri::command]
+pub async fn install_mods_batch(app_handle: tauri::AppHandle, state: State<'_, AppState>, server_id: i64, mod_ids: Vec<String>) -> Result<(), String> {
     // 1. Get install path
-    let (install_path, _server_type) = {
+    let (install_path, server_type) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let conn = db.get_connection().map_err(|e| e.to_string())?;
         conn.query_row(
@@ -232,6 +310,18 @@ pub async fn install_mods_batch(state: State<'_, AppState>, server_id: i64, mod_
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         ).map_err(|e| e.to_string())?
     };
+
+    // 2. Download mods if ASE (Steam)
+    if server_type == "ASE" {
+        use crate::services::steamcmd::SteamCmdService;
+        let service = SteamCmdService::new(app_handle.clone());
+        let path = PathBuf::from(&install_path);
+        let mods_clone = mod_ids.clone();
+        
+        tauri::async_runtime::spawn_blocking(move || {
+            service.download_mods(&server_type, &path, mods_clone)
+        }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    }
 
     let config_path = get_config_path(&PathBuf::from(install_path));
     if !config_path.exists() {

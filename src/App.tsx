@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import AppLayout from './components/layout/AppLayout';
 import Dashboard from './pages/Dashboard';
 import ServerManager from './pages/ServerManager';
@@ -25,11 +26,26 @@ function App() {
     const [showOnboarding, setShowOnboarding] = useState(false);
 
     useEffect(() => {
-        // Check if this is the first launch
-        const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
-        if (!hasSeenOnboarding) {
-            setShowOnboarding(true);
-        }
+        const checkStatus = async () => {
+            try {
+                // Always check if SteamCMD is actually installed
+                const steamCmdInstalled = await invoke<boolean>('check_steamcmd_installed');
+                const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
+
+                // Show onboarding if SteamCMD is missing OR if user hasn't seen it
+                if (!steamCmdInstalled || !hasSeenOnboarding) {
+                    setShowOnboarding(true);
+                }
+            } catch (error) {
+                console.error('Failed to check SteamCMD status:', error);
+                // Fallback to local storage if check fails
+                if (!localStorage.getItem('hasSeenOnboarding')) {
+                    setShowOnboarding(true);
+                }
+            }
+        };
+
+        checkStatus();
     }, []);
 
     const handleOnboardingComplete = () => {
