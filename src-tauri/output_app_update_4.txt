@@ -1,0 +1,114 @@
+    Checking ark-server-manager v2.0.0 (P:\ark\ark-server-manager\src-tauri)
+warning: unused import: `ServerType`
+ --> src\commands\mods.rs:1:30
+  |
+1 | use crate::models::{ModInfo, ServerType};
+  |                              ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::path::PathBuf`
+ --> src\services\app_updater.rs:4:5
+  |
+4 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Cursor`
+ --> src\services\file_manager.rs:3:21
+  |
+3 | use std::io::{self, Cursor, Read, Write};
+  |                     ^^^^^^
+
+warning: unused import: `PathBuf`
+ --> src\services\file_manager.rs:4:23
+  |
+4 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused import: `std::time::Duration`
+ --> src\services\rcon_client.rs:2:5
+  |
+2 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `server_type_str`
+  --> src\commands\mods.rs:33:24
+   |
+33 |     let (install_path, server_type_str) = {
+   |                        ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_server_type_str`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `active_mods_found` is never read
+  --> src\commands\mods.rs:92:21
+   |
+92 |                     active_mods_found = true;
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable `active_mods_found` is assigned to, but never used
+   --> src\commands\mods.rs:273:14
+    |
+273 |      let mut active_mods_found = false;
+    |              ^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_active_mods_found` instead
+
+warning: value assigned to `active_mods_found` is never read
+   --> src\commands\mods.rs:286:14
+    |
+286 |              active_mods_found = true;
+    |              ^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+error[E0061]: this method takes 2 arguments but 0 arguments were supplied
+   --> src\commands\server.rs:247:18
+    |
+247 |              sys.refresh_processes();
+    |                  ^^^^^^^^^^^^^^^^^-- two arguments of type `ProcessesToUpdate<'_>` and `bool` are missing
+    |
+note: method defined here
+   --> C:\Users\sanja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sysinfo-0.32.1\src\common\system.rs:289:12
+    |
+289 |     pub fn refresh_processes(
+    |            ^^^^^^^^^^^^^^^^^
+help: provide the arguments
+    |
+247 |              sys.refresh_processes(/* ProcessesToUpdate<'_> */, /* bool */);
+    |                                    +++++++++++++++++++++++++++++++++++++++
+
+error[E0597]: `db` does not live long enough
+  --> src\services\server_monitor.rs:50:43
+   |
+49 |                         let db = state.db.lock().unwrap();
+   |                             -- binding `db` declared here
+50 |                         if let Ok(conn) = db.get_connection() {
+   |                                           ^^-----------------
+   |                                           |
+   |                                           borrowed value does not live long enough
+   |                                           a temporary with access to the borrow is created here ...
+...
+53 |                     }
+   |                     -
+   |                     |
+   |                     `db` dropped here while still borrowed
+   |                     ... and the borrow might be used here, when that temporary is dropped and runs the destructor for type `Result<std::sync::MutexGuard<'_, rusqlite::Connection>, std::string::String>`
+   |
+help: consider adding semicolon after the expression so its temporaries are dropped sooner, before the local variables declared by the block are dropped
+   |
+52 |                         };
+   |                          +
+
+warning: unused variable: `dest_mod_file`
+   --> src\services\steamcmd.rs:245:22
+    |
+245 |                  let dest_mod_file = dest_base.join(format!("{}.mod", mod_id)); // ARK requires a .mod file too
+    |                      ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dest_mod_file`
+
+Some errors have detailed explanations: E0061, E0597.
+For more information about an error, try `rustc --explain E0061`.
+warning: `ark-server-manager` (lib) generated 10 warnings
+error: could not compile `ark-server-manager` (lib) due to 2 previous errors; 10 warnings emitted

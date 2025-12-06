@@ -1,0 +1,112 @@
+use tauri::{AppHandle, Manager, State};
+use crate::AppState;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::fs;
+use reqwest::header::USER_AGENT;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AppUpdateInfo {
+    pub version: String,
+    pub download_url: String,
+    pub release_notes: String,
+}
+
+#[derive(Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    body: String,
+    assets: Vec<GitHubAsset>,
+}
+
+#[derive(Deserialize)]
+struct GitHubAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+pub struct AppUpdateService;
+
+impl AppUpdateService {
+    pub async fn check_for_updates(state: &State<'_, AppState>) -> Result<Option<AppUpdateInfo>, String> {
+        // 1. Get Repo Settings
+        let repo_opt = {
+             let db = state.db.lock().map_err(|e| e.to_string())?;
+             db.get_setting("github_repo").map_err(|e| e.to_string())?
+        };
+
+        let repo = match repo_opt {
+            Some(r) => r,
+            None => return Err("GitHub repository not configured. Please set 'github_repo' setting.".to_string()),
+        };
+
+        if repo.trim().is_empty() {
+             return Err("GitHub repository is empty.".to_string());
+        }
+
+        // 2. Fetch Latest Release
+        let client = reqwest::Client::new();
+        let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+        
+        let resp = client.get(&url)
+            .header(USER_AGENT, "ArkServerManager")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check updates: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("GitHub API Error: {}", resp.status()));
+        }
+
+        let release: GitHubRelease = resp.json().await.map_err(|e| format!("Failed to parse release info: {}", e))?;
+
+        // 3. Compare Versions
+        // We assume semantic versioning, potentially with 'v' prefix
+        let current_version = env!("CARGO_PKG_VERSION");
+        let remote_version_tag = release.tag_name.trim_start_matches('v');
+        
+        // Simple string comparison for MVP, ideally semver parsing
+        if remote_version_tag == current_version {
+            return Ok(None); // Remote matches current, or is older (ignoring specific logic for now)
+        }
+        
+        // This is a naive check (simply different means update?). 
+        // Better: compare semver. But for now, if tag != current, assume update available.
+        // Actually, let's just return it if it's different.
+        
+        // Find .exe asset
+        let asset = release.assets.iter()
+            .find(|a| a.name.ends_with(".exe") || a.name.ends_with(".msi"))
+            .ok_or("No executable asset found in release.".to_string())?;
+
+        Ok(Some(AppUpdateInfo {
+            version: remote_version_tag.to_string(),
+            download_url: asset.browser_download_url.clone(),
+            release_notes: release.body,
+        }))
+    }
+
+    pub async fn install_update(app_handle: AppHandle, download_url: String) -> Result<(), String> {
+        // 1. Download File
+        let temp_dir = app_handle.path().temp_dir().map_err(|e| e.to_string())?;
+        let file_name = download_url.split('/').last().unwrap_or("update.exe");
+        let dest_path = temp_dir.join(file_name);
+
+        let response = reqwest::get(&download_url).await.map_err(|e| format!("Failed to download update: {}", e))?;
+        let content = response.bytes().await.map_err(|e| format!("Failed to read update body: {}", e))?;
+        
+        fs::write(&dest_path, content).map_err(|e| format!("Failed to save update file: {}", e))?;
+
+        // 2. Run Installer
+        // We run it and detach, then close ourself
+        let _ = std::process::Command::new(&dest_path)
+            .arg("/SILENT") // Assuming common installer flags
+            .spawn()
+            .map_err(|e| format!("Failed to launch installer: {}", e))?;
+
+        // 3. Exit App
+        app_handle.exit(0);
+        
+        Ok(())
+    }
+}

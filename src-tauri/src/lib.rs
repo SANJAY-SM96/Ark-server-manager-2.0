@@ -92,6 +92,9 @@ pub fn run() {
             commands::server::delete_server,
             commands::server::update_server,
             commands::server::get_server_version,
+            commands::server::set_auto_restart,
+            commands::server::set_auto_update,
+            commands::server::update_server_graceful,
             // Mod commands
             commands::mods::search_mods,
             commands::mods::install_mod,
@@ -99,6 +102,7 @@ pub fn run() {
             commands::mods::get_installed_mods,
             commands::mods::update_active_mods,
             commands::mods::uninstall_mod,
+            commands::mods::check_mod_conflicts,
             // Backup commands
             commands::backup::create_backup,
             commands::backup::get_backups,
@@ -113,6 +117,11 @@ pub fn run() {
             commands::cluster::create_cluster,
             commands::cluster::get_clusters,
             commands::cluster::delete_cluster,
+            // App Updater
+            commands::app_updater::check_app_update,
+            commands::app_updater::install_app_update,
+            commands::app_updater::get_app_version,
+            commands::app_updater::set_github_repo,
             // RCON commands
             commands::rcon::send_rcon_command,
             commands::rcon::get_online_players,

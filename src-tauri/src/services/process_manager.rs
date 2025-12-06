@@ -32,7 +32,7 @@ impl ProcessManager {
         use_battleye: bool,
         multihome_ip: Option<String>,
         crossplay_enabled: bool,
-    ) -> Result<()> {
+    ) -> Result<u32> {
         let executable = match server_type {
             "ASE" => install_path
                 .join("ShooterGame")
@@ -121,15 +121,22 @@ impl ProcessManager {
             // For ASA, crossplay is default. We might add specific overrides later.
         }
 
+        use std::os::windows::process::CommandExt;
+
+        // ...
+
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let child = Command::new(&executable)
             .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .context("Failed to start server process")?;
 
+        let child_id = child.id();
         let mut processes = self.processes.lock().unwrap();
         processes.insert(server_id, child);
 
-        Ok(())
+        Ok(child_id)
     }
 
     /// Stop ARK server
@@ -181,7 +188,7 @@ impl ProcessManager {
         use_battleye: bool,
         multihome_ip: Option<String>,
         crossplay_enabled: bool,
-    ) -> Result<()> {
+    ) -> Result<u32> {
         // Stop if running
         if self.is_running(server_id) {
             self.stop_server(server_id)?;

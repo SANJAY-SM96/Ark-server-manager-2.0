@@ -4,6 +4,7 @@ use crate::AppState;
 use crate::services::mod_scraper;
 use std::path::{Path, PathBuf};
 use std::fs;
+use crate::services::mod_compatibility::{ModCompatibilityService, ModConflict};
 
 // Helper to find GameUserSettings.ini path
 fn get_config_path(install_path: &Path) -> PathBuf {
@@ -404,4 +405,46 @@ pub async fn install_mods_batch(app_handle: tauri::AppHandle, state: State<'_, A
     fs::write(config_path, new_lines.join("\n")).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn check_mod_conflicts(state: State<'_, AppState>, server_id: i64) -> Result<Vec<ModConflict>, String> {
+    // 1. Get install path
+    let install_path: String = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = db.get_connection().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT install_path FROM servers WHERE id = ?1",
+            [server_id],
+            |row| row.get(0),
+        ).map_err(|e| e.to_string())?
+    };
+
+    let config_path = get_config_path(&PathBuf::from(install_path));
+    if !config_path.exists() {
+         return Ok(vec![]);
+    }
+
+    let content = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    
+    // 2. Parse ActiveMods
+    let mut mod_ids = Vec::new();
+    let mut in_server_settings = false;
+
+    for line in content.lines() {
+        if line.trim().eq_ignore_ascii_case("[ServerSettings]") {
+            in_server_settings = true;
+            continue;
+        }
+        if line.trim().starts_with("[") {
+            in_server_settings = false;
+        }
+        if in_server_settings && line.trim().starts_with("ActiveMods=") {
+            let val = line.trim().strip_prefix("ActiveMods=").unwrap_or("");
+            mod_ids = val.split(',').filter(|s| !s.is_empty()).map(String::from).collect();
+            break; 
+        }
+    }
+
+    Ok(ModCompatibilityService::check_conflicts(&mod_ids))
 }

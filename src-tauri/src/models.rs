@@ -65,6 +65,7 @@ pub struct Server {
     pub config: ServerConfig,
     pub created_at: String,
     pub last_started: Option<String>,
+    pub pid: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +88,8 @@ pub struct ServerConfig {
     pub battleye_enabled: bool,
     pub multihome_ip: Option<String>,
     pub crossplay_enabled: bool,
+    pub auto_restart: Option<bool>,
+    pub auto_update: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -36,6 +36,15 @@ impl Database {
             "ALTER TABLE servers ADD COLUMN crossplay_enabled BOOLEAN DEFAULT 0",
             [],
         );
+        let _ = conn.execute(
+            "ALTER TABLE servers ADD COLUMN auto_restart BOOLEAN DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE servers ADD COLUMN auto_update BOOLEAN DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute("ALTER TABLE servers ADD COLUMN pid INTEGER", []);
 
         Ok(())
     }

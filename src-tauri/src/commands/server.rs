@@ -13,7 +13,7 @@ pub async fn get_all_servers(state: State<'_, AppState>) -> Result<Vec<Server>, 
     let mut stmt = conn.prepare(
         "SELECT id, name, server_type, install_path, status, game_port, query_port, rcon_port, 
          max_players, server_password, admin_password, map_name, session_name, motd, 
-         created_at, last_started, battleye_enabled, multihome_ip, crossplay_enabled FROM servers ORDER BY id"
+         created_at, last_started, battleye_enabled, multihome_ip, crossplay_enabled, auto_restart, auto_update, pid FROM servers ORDER BY id"
     ).map_err(|e| e.to_string())?;
     
     let servers = stmt.query_map([], |row| {
@@ -45,9 +45,12 @@ pub async fn get_all_servers(state: State<'_, AppState>) -> Result<Vec<Server>, 
                 battleye_enabled: row.get::<_, bool>(16).unwrap_or(false),
                 multihome_ip: row.get(17).unwrap_or(None),
                 crossplay_enabled: row.get::<_, bool>(18).unwrap_or(false),
+                auto_restart: row.get(19).unwrap_or(Some(false)),
+                auto_update: row.get(20).unwrap_or(Some(false)),
             },
             created_at: row.get(14)?,
             last_started: row.get(15)?,
+            pid: row.get(21).unwrap_or(None),
         })
     }).map_err(|e| e.to_string())?;
     
@@ -153,9 +156,12 @@ pub async fn install_server(
             battleye_enabled: false,
             multihome_ip: None,
             crossplay_enabled: false,
+            auto_restart: Some(false),
+            auto_update: Some(false),
         },
         created_at: chrono::Utc::now().to_rfc3339(),
         last_started: None,
+        pid: None,
     })
 }
 
@@ -191,7 +197,7 @@ pub async fn start_server(state: State<'_, AppState>, server_id: i64) -> Result<
         }).map_err(|e| e.to_string())?
     };
 
-    state.process_manager.start_server(
+    let pid = state.process_manager.start_server(
         server_id,
         &server_type,
         &PathBuf::from(install_path),
@@ -212,7 +218,7 @@ pub async fn start_server(state: State<'_, AppState>, server_id: i64) -> Result<
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let conn = db.get_connection().map_err(|e| e.to_string())?;
-        conn.execute("UPDATE servers SET status = ?1 WHERE id = ?2", ("running", server_id))
+        conn.execute("UPDATE servers SET status = ?1, pid = ?2 WHERE id = ?3", ("running", pid, server_id))
             .map_err(|e| e.to_string())?;
     }
     
@@ -223,7 +229,28 @@ pub async fn start_server(state: State<'_, AppState>, server_id: i64) -> Result<
 
 #[tauri::command]
 pub async fn stop_server(state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
-    state.process_manager.stop_server(server_id).map_err(|e| e.to_string())?;
+    if let Err(e) = state.process_manager.stop_server(server_id) {
+        println!("ProcessManager stop failed: {}. Attempting PID kill...", e);
+        // Fallback: Check PID in DB
+        let pid_opt: Option<u32> = {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            let conn = db.get_connection().map_err(|e| e.to_string())?;
+            conn.query_row("SELECT pid FROM servers WHERE id = ?1", [server_id], |row| {
+                let p: Option<i64> = row.get(0)?;
+                Ok(p.map(|v| v as u32))
+            }).ok().flatten()
+        };
+
+        if let Some(pid) = pid_opt {
+             use sysinfo::{System, Pid};
+             let mut sys = System::new_all();
+             sys.refresh_all();
+             if let Some(process) = sys.process(Pid::from(pid as usize)) {
+                 process.kill();
+                 println!("Killed orphaned process PID {}", pid);
+             }
+        }
+    }
     
     // Update status in database
     {
@@ -270,7 +297,7 @@ pub async fn restart_server(state: State<'_, AppState>, server_id: i64) -> Resul
         }).map_err(|e| e.to_string())?
     }; // db and conn dropped here
     
-    state.process_manager.restart_server(
+    let pid = state.process_manager.restart_server(
         server_id,
         &server_type,
         &PathBuf::from(install_path),
@@ -286,6 +313,14 @@ pub async fn restart_server(state: State<'_, AppState>, server_id: i64) -> Resul
         multihome_ip,
         crossplay_enabled,
     ).map_err(|e| e.to_string())?;
+    
+    // Update PID in DB
+    {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = db.get_connection().map_err(|e| e.to_string())?;
+        conn.execute("UPDATE servers SET pid = ?1 WHERE id = ?2", (pid, server_id))
+            .map_err(|e| e.to_string())?;
+    }
     
     let _ = NotificationService::send_notification(&state, "Server Restarted", &format!("Server {} has been restarted.", server_id)).await;
 
@@ -390,4 +425,27 @@ pub async fn get_server_version(app_handle: AppHandle, state: State<'_, AppState
     let path = PathBuf::from(install_path);
     
     service.get_build_id(&server_type, &path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_auto_restart(state: State<'_, AppState>, server_id: i64, enabled: bool) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db.get_connection().map_err(|e| e.to_string())?;
+    conn.execute("UPDATE servers SET auto_restart = ?1 WHERE id = ?2", (enabled, server_id))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_auto_update(state: State<'_, AppState>, server_id: i64, enabled: bool) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db.get_connection().map_err(|e| e.to_string())?;
+    conn.execute("UPDATE servers SET auto_update = ?1 WHERE id = ?2", (enabled, server_id))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_server_graceful(app: tauri::AppHandle, state: State<'_, AppState>, server_id: i64) -> Result<(), String> {
+    crate::services::updater::ServerUpdateService::update_server_graceful(app, state, server_id).await
 }

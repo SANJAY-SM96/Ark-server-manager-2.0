@@ -12,3 +12,4 @@ pub mod security;
 pub mod server;
 pub mod system;
 pub mod tribe;
+pub mod app_updater;
